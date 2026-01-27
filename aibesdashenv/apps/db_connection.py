@@ -1,13 +1,14 @@
 import dash
 from dash import dcc, html, Input, Output, State, callback
 import dash_bootstrap_components as dbc
-import mysql.connector
-from mysql.connector import Error
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from flask import session
 
 # Layout for the database connection page
 layout = html.Div([
-    dcc.Location(id="db-connection-url", refresh=False),
+    dcc.Location(id="db-connection-url", refresh=True),  # Changed to refresh=True for proper redirect
+    
     # Background image div
     html.Div(
         style={
@@ -23,6 +24,7 @@ layout = html.Div([
             'zIndex': '-1'
         }
     ),
+    
     # Content container
     dbc.Container([
         dbc.Row([
@@ -160,74 +162,66 @@ def connect_to_database(n_clicks, host, database, username, password):
         ), dash.no_update]
     
     try:
+        # Create connection string
+        if password:
+            connection_string = f"mysql+pymysql://{username}:{password}@{host}/{database}"
+        else:
+            connection_string = f"mysql+pymysql://{username}@{host}/{database}"
+        
         # Test connection
-        connection = mysql.connector.connect(
-            host=host.strip(),
-            database=database.strip(),
-            user=username.strip(),
-            password=password if password else ""
+        engine = create_engine(connection_string)
+        connection = engine.connect()
+        connection.close()
+        
+        # Store connection string in user session
+        session['db_connection_string'] = connection_string
+        
+        # Return success message and redirect to dashboard
+        success_alert = dbc.Alert([
+            html.I(className="fas fa-check-circle me-2"),
+            "Successfully connected to the database! Redirecting to dashboard..."
+        ], 
+        color="success",
+        className="mt-3"
         )
         
-        if connection.is_connected():
-            # Store connection configuration in user session 
-            session['db_config'] = {
-                'host': host.strip(),
-                'database': database.strip(),
-                'user': username.strip(),
-                'password': password if password else ""
-            }
-            
-            # Close test connection
-            connection.close()
-            
-            # success message and redirect to dashboard
-            success_alert = dbc.Alert([
-                html.I(className="fas fa-check-circle me-2"),
-                "Successfully connected to the database! Redirecting to dashboard..."
-            ], 
-            color="success",
-            className="mt-3"
-            )
-            
-            return [success_alert, "/apps/dashboard"]
-        else:
-            return [dbc.Alert([
-                html.I(className="fas fa-times-circle me-2"),
-                "Failed to connect to the database."
-            ], 
-            color="danger",
-            className="mt-3"
-            ), dash.no_update]
-            
-    except Error as e:
+        return [success_alert, "/apps/dashboard"]  # This will now properly redirect
+        
+    except SQLAlchemyError as e:
         return [dbc.Alert([
             html.I(className="fas fa-exclamation-triangle me-2"),
-            f"Error connecting to MySQL: {str(e)}"
+            f"Error connecting to database: {str(e)}"
+        ], 
+        color="danger",
+        className="mt-3"
+        ), dash.no_update]
+    except Exception as e:
+        return [dbc.Alert([
+            html.I(className="fas fa-exclamation-triangle me-2"),
+            f"Unexpected error: {str(e)}"
         ], 
         color="danger",
         className="mt-3"
         ), dash.no_update]
 
-# Function to get database connection for current user
-def get_db_connection():
-    if 'db_config' in session and session['db_config']:
+# Function to get database engine for current user
+def get_db_engine():
+    if 'db_connection_string' in session and session['db_connection_string']:
         try:
-            config = session['db_config']
-            connection = mysql.connector.connect(**config)
-            return connection
+            engine = create_engine(session['db_connection_string'])
+            return engine
         except:
             pass
     return None
 
 # Function to check if connected for current user
 def is_connected():
-    if 'db_config' in session and session['db_config']:
+    if 'db_connection_string' in session and session['db_connection_string']:
         try:
-            config = session['db_config']
-            connection = mysql.connector.connect(**config)
-            is_connected = connection.is_connected()
+            engine = create_engine(session['db_connection_string'])
+            connection = engine.connect()
             connection.close()
-            return is_connected
+            return True
         except:
             return False
     return False
