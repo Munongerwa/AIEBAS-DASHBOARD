@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from flask import session
 
+
 # Layout for the database connection page
 layout = html.Div([
     dcc.Location(id="db-connection-url", refresh=True),  # Changed to refresh=True for proper redirect

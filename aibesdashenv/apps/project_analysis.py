@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objs as go
 import datetime
 
-# Function to get user-specific database engine
+#get user-specific database engine
 def get_user_db_engine():
     if 'db_connection_string' in session and session['db_connection_string']:
         try:
@@ -23,7 +23,7 @@ layout = html.Div([
         "Project Analysis"
     ], className="mt-3 mb-4 text-center"),
     
-    # Connection status indicator
+    # Connection status
     html.Div(id="project-connection-status"),
     
     dbc.Container([
@@ -70,7 +70,7 @@ layout = html.Div([
             ], width=12)
         ], className="mb-4"),
         
-        # Summary Cards
+        # Cards
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -150,7 +150,7 @@ layout = html.Div([
     ], className="mt-4", fluid=True)
 ])
 
-# Callback to load project options
+# load project options, callback
 @callback(
     Output("project-project-dropdown", "options"),
     Input("project-year-dropdown", "value")
@@ -171,7 +171,7 @@ def load_project_options(selected_year):
         if engine:
             engine.dispose()
 
-# Main callback for project analysis
+#project analysis callback
 @callback(
     [Output("project-connection-status", "children"),
      Output("total-projects", "children"),
@@ -199,26 +199,26 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
         return [not_connected_alert, "0", "0", "$0", "0%", empty_fig, empty_fig]
     
     try:
-        # Build query based on filters
+        # filters query
         where_clause = f"WHERE YEAR(registration_date) = {selected_year}"
         if selected_project:
             where_clause += f" AND project_id = {selected_project}"
         
-        # Query 1: Total Projects
+        # Total Projects
         total_projects_query = f"""
         SELECT COUNT(DISTINCT project_id) AS total_projects FROM Stands {where_clause}
         """
         projects_df = pd.read_sql(total_projects_query, engine)
         total_projects = projects_df.iloc[0]['total_projects'] if not projects_df.empty and projects_df.iloc[0]['total_projects'] else 0
         
-        # Query 2: Total Stands
+        # Total Stands
         total_stands_query = f"""
         SELECT COUNT(stand_number) AS total_stands FROM Stands {where_clause}
         """
         stands_df = pd.read_sql(total_stands_query, engine)
         total_stands = stands_df.iloc[0]['total_stands'] if not stands_df.empty and stands_df.iloc[0]['total_stands'] else 0
         
-        # Query 3: Average Sale Value
+        # Average Sale Value
         avg_sale_query = f"""
         SELECT AVG(sale_value) AS avg_sale FROM Stands {where_clause}
         """
@@ -226,10 +226,10 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
         avg_sale = avg_df.iloc[0]['avg_sale'] if not avg_df.empty and avg_df.iloc[0]['avg_sale'] else 0
         formatted_avg_sale = f"${avg_sale:,.2f}" if avg_sale else "$0"
         
-        # Query 4: Completion Rate (assuming status indicates completion)
+        # Completion Rate 
         completion_query = f"""
         SELECT 
-            COUNT(CASE WHEN status = 'sold' THEN 1 END) AS completed,
+            COUNT(CASE WHEN available = 0 THEN 1 END) AS completed,
             COUNT(*) AS total
         FROM Stands {where_clause}
         """
@@ -240,7 +240,7 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
             completion_rate = 0
         formatted_completion = f"{completion_rate:.1f}%" if completion_rate else "0%"
         
-        #Monthly Project Progress (Line Chart)
+        #Monthly Project Progress 
         progress_query = f"""
         SELECT 
             MONTH(registration_date) AS month,
@@ -258,7 +258,6 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
             progress_df['month'] = progress_df['month'].astype(int)
             progress_df['month_name'] = progress_df['month'].apply(lambda x: pd.to_datetime(f"2023-{x}-01").strftime('%B'))
             
-            # Handle missing months
             missing_months = []
             for month in month_order:
                 if month not in progress_df['month_name'].values:
@@ -294,7 +293,7 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
             line_fig = go.Figure()
             line_fig.update_layout(title="No Data Available")
         
-        #Top Performing Projects (Bar Chart)
+        #Top Performing Projects 
         top_projects_query = f"""
         SELECT 
             project_id,

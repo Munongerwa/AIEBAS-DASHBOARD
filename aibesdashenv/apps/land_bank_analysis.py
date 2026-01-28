@@ -215,7 +215,7 @@ def update_land_bank_analysis(n_clicks, selected_year, selected_project):
         return [not_connected_alert, "0 sq ft", "0 sq ft", "0%", empty_fig, empty_fig]
     
     try:
-        # Build query based on filters
+        # filters
         where_clause = f"WHERE YEAR(registration_date) = {selected_year}"
         if selected_project:
             where_clause += f" AND project_id = {selected_project}"
@@ -262,7 +262,7 @@ def update_land_bank_analysis(n_clicks, selected_year, selected_project):
         formatted_residential_stands = f"{residential_stands:,.0f} stands" if residential_stands else "0 stands"
 
 
-        # Land Distribution by Status (Pie Chart)
+        # Land distribution by status.... pie chart
         status_query = f"""
         SELECT available, COUNT(stand_number) AS area FROM Stands {where_clause} GROUP BY available
         """
@@ -279,9 +279,9 @@ def update_land_bank_analysis(n_clicks, selected_year, selected_project):
             pie_fig = go.Figure()
             pie_fig.update_layout(title="No Data Available")
         
-        # Land Area by Project (Bar Chart)
+        # project area
         project_query = f"""
-        SELECT project_id, SUM(stand_number) AS total_area FROM Stands {where_clause} GROUP BY project_id ORDER BY total_area DESC
+        SELECT project_id, SUM(size) AS total_area FROM Stands {where_clause} GROUP BY project_id ORDER BY total_area DESC
         """
         project_df = pd.read_sql(project_query, engine)
         

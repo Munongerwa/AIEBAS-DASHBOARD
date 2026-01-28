@@ -1,10 +1,23 @@
+# app.py (main dashboard file)
 import dash_bootstrap_components as dbc
-from dash import html, dcc, Input, Output, callback
+from dash import html, dcc, Input, Output, callback, State, no_update
 from flask import session
 from sqlalchemy import create_engine
 import pandas as pd
+from .reports import initialize_report_generator, get_report_generator
 import plotly.graph_objs as go
 import datetime
+import json
+import os
+from apps.reports import initialize_report_generator, get_report_generator
+import dash
+# Conditional ML import
+try:
+    from sklearn.linear_model import LinearRegression
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+import numpy as np
 
 # Function to get user-specific database engine
 def get_user_db_engine():
@@ -17,54 +30,165 @@ def get_user_db_engine():
             return None
     return None
 
+# Function to create forecast data
+def create_forecast(df_monthly, months_ahead=3):
+    if df_monthly.empty or len(df_monthly) < 2:
+        # Return empty dataframe with same structure
+        return pd.DataFrame(columns=['month', 'total_stands_sold', 'type'])
+    
+    try:
+        # Only use scikit-learn if available
+        if ML_AVAILABLE:
+            # Prepare data for linear regression
+            df_monthly = df_monthly.sort_values('month')
+            X = np.array(df_monthly['month']).reshape(-1, 1)
+            y = df_monthly['total_stands_sold'].values
+            
+            # Check if we have valid data
+            if len(y) < 2 or np.all(y == 0):
+                return simple_forecast(df_monthly, months_ahead)
+            
+            # Fit linear model
+            model = LinearRegression()
+            model.fit(X, y)
+            
+            # Predict next months
+            last_month = df_monthly['month'].max()
+            future_months = [last_month + i for i in range(1, months_ahead + 1)]
+            future_X = np.array(future_months).reshape(-1, 1)
+            predictions = model.predict(future_X)
+            
+            # Ensure no negative predictions
+            predictions = np.maximum(predictions, 0)
+            
+            # Create forecast dataframe
+            forecast_df = pd.DataFrame({
+                'month': future_months,
+                'total_stands_sold': predictions,
+                'type': 'forecast'
+            })
+        else:
+            # Use simple forecasting if ML not available
+            return simple_forecast(df_monthly, months_ahead)
+            
+        # Add actual data
+        df_monthly['type'] = 'actual'
+        result_df = pd.concat([df_monthly[['month', 'total_stands_sold', 'type']], forecast_df], ignore_index=True)
+        
+        return result_df
+    except Exception as e:
+        print(f"Forecast error: {e}")
+        # Fallback to simple forecast
+        return simple_forecast(df_monthly, months_ahead)
+
+def simple_forecast(df_monthly, months_ahead=3):
+    """Simple forecasting without ML dependencies"""
+    if df_monthly.empty:
+        return pd.DataFrame(columns=['month', 'total_stands_sold', 'type'])
+    
+    # Sort by month
+    df_monthly = df_monthly.sort_values('month')
+    
+    # Simple average of last 3 months or all available
+    recent_data = df_monthly['total_stands_sold'].tail(min(3, len(df_monthly)))
+    avg_value = recent_data.mean() if not recent_data.empty else 0
+    
+    # Create forecast data
+    last_month = df_monthly['month'].max()
+    
+    forecast_data = []
+    for i in range(1, months_ahead + 1):
+        forecast_data.append({
+            'month': last_month + i,
+            'total_stands_sold': max(0, avg_value),  # Ensure non-negative
+            'type': 'forecast'
+        })
+    
+    # Add actual data
+    df_monthly['type'] = 'actual'
+    result_df = pd.concat([df_monthly[['month', 'total_stands_sold', 'type']], 
+                          pd.DataFrame(forecast_data)], ignore_index=True)
+    
+    return result_df
+
+# Layout
 layout = html.Div([
-    html.H1([
-        html.I(className="fas fa-chart-line me-2"),
-        "Dashboard"
-    ], className="mt-3 mb-4 text-center"),
+    # Hidden div for storing report data (store as string)
+    html.Div(id="report-data-store", style={"display": "none"}),
     
     # Connection status indicator
     html.Div(id="dashboard-connection-status"),
     
-    # Filters Section with Year Selection
+    # Filters Section
     dbc.Container([
         dbc.Row([
             dbc.Col([
                 dbc.Card([
                     dbc.CardHeader([
                         html.I(className="fas fa-filter me-2"),
-                        "Filters"
-                    ]),
+                        "Dashboard Filters"
+                    ], className="fw-bold"),
                     dbc.CardBody([
                         dbc.Row([
                             dbc.Col([
                                 dbc.Label([
-                                    html.I(className="fas fa-calendar-alt me-1"),
-                                    "Select Year"
-                                ], className="mb-2"),
-                                dcc.Dropdown(
-                                    id="year-dropdown",
+                                    html.I(className="fas fa-clock me-1"),
+                                    "Time Range"
+                                ], className="mb-1"),
+                                dcc.RadioItems(
+                                    id="time-filter-radio",
                                     options=[
-                                        {'label': str(year), 'value': year} 
-                                        for year in range(datetime.datetime.now().year, datetime.datetime.now().year - 5, -1)
-                                    ],
-                                    value=datetime.datetime.now().year,
-                                    clearable=False,
+                                        {"label": "Today", "value": "daily"},
+                                        {"label": "Last 7 Days", "value": "weekly"},
+                                        {"label": "This Year", "value": "yearly"}
+                                    ] + ([{"label": "Forecast", "value": "forecast"}] if ML_AVAILABLE else []),
+                                    value="yearly",
+                                    inline=True,
                                     className="mb-3"
-                                )
+                                ),
+                                html.Div([
+                                    dbc.Label([
+                                        html.I(className="fas fa-calendar-alt me-1"),
+                                        "Select Year"
+                                    ], className="mb-1"),
+                                    dcc.Dropdown(
+                                        id="year-dropdown",
+                                        options=[
+                                            {'label': str(year), 'value': year} 
+                                            for year in range(datetime.datetime.now().year, datetime.datetime.now().year - 5, -1)
+                                        ],
+                                        value=datetime.datetime.now().year,
+                                        clearable=False,
+                                        className="mb-3"
+                                    )
+                                ], id="year-filter-container")
                             ], width=12)
                         ]),
                         
-                        dbc.Button([
-                            html.I(className="fas fa-sync me-2"),
-                            "Refresh Data"
-                        ], id="refresh-dashboard-button", color="primary", className="w-50")
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Button([
+                                    html.I(className="fas fa-sync me-2"),
+                                    "Refresh Dashboard"
+                                ], id="refresh-dashboard-button", color="primary", className="me-2 mb-2"),
+                                dbc.Button([
+                                    html.I(className="fas fa-download me-2"),
+                                    "Download Report"
+                                ], id="download-report-button", color="success", className="me-2 mb-2"),
+                                dbc.Button([
+                                    html.I(className="fas fa-file-pdf me-2"),
+                                    "Generate Weekly PDF"
+                                ], id="generate-weekly-report", color="info", className="mb-2"),
+                                html.Div(id="manual-report-status", className="mt-2")
+                            ], width=12)
+                        ]),
+                        dcc.Download(id="download-report")
                     ])
-                ])
-            ], width=12)
+                ], className="shadow-sm")
+            ], width=12, lg=4)
         ], className="mb-4"),
         
-        # Metrics Cards with YoY Comparisons
+        # Metrics Cards Row
         dbc.Row([
             # Total Stand Value Card
             dbc.Col([
@@ -76,11 +200,11 @@ layout = html.Div([
                             ], className="d-flex justify-content-center mb-3"),
                             html.H4("Total Stand Value", className="card-title text-center"),
                             html.H2(id="total-stand-value", children="$0", className="text-center text-success fw-bold"),
-                            html.P(id="stand-value-period", children="Year: --", className="text-center text-muted small"),
+                            html.P(id="stand-value-period", children="Period: --", className="text-center text-muted small"),
                             html.Div(id="stand-value-yoy", className="text-center mt-2")
                         ], className="text-center")
                     ])
-                ], className="shadow-sm")
+                ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
             
             # Number of Stands Sold Card
@@ -93,11 +217,11 @@ layout = html.Div([
                             ], className="d-flex justify-content-center mb-3"),
                             html.H4("Stands Sold", className="card-title text-center"),
                             html.H2(id="stands-sold-value", children="0", className="text-center text-primary fw-bold"),
-                            html.P(id="stands-sold-period", children="Year: --", className="text-center text-muted small"),
+                            html.P(id="stands-sold-period", children="Period: --", className="text-center text-muted small"),
                             html.Div(id="stands-sold-yoy", className="text-center mt-2")
                         ], className="text-center")
                     ])
-                ], className="shadow-sm")
+                ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
             
             # Total Deposit Card
@@ -110,11 +234,11 @@ layout = html.Div([
                             ], className="d-flex justify-content-center mb-3"),
                             html.H4("Total Deposit", className="card-title text-center"),
                             html.H2(id="total-deposit-value", children="$0", className="text-center text-info fw-bold"),
-                            html.P(id="deposit-period", children="Year: --", className="text-center text-muted small"),
+                            html.P(id="deposit-period", children="Period: --", className="text-center text-muted small"),
                             html.Div(id="deposit-yoy", className="text-center mt-2")
                         ], className="text-center")
                     ])
-                ], className="shadow-sm")
+                ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
             
             # Total Installment Card
@@ -127,55 +251,71 @@ layout = html.Div([
                             ], className="d-flex justify-content-center mb-3"),
                             html.H4("Total Installment", className="card-title text-center"),
                             html.H2(id="total-installment-value", children="$0", className="text-center text-warning fw-bold"),
-                            html.P(id="installment-period", children="Year: --", className="text-center text-muted small"),
+                            html.P(id="installment-period", children="Period: --", className="text-center text-muted small"),
                             html.Div(id="installment-yoy", className="text-center mt-2")
                         ], className="text-center")
                     ])
-                ], className="shadow-sm")
+                ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
-        ], className="mb-4"),
+        ], className="mb-4 g-3"),
         
-        # New Graphs Section (Pie Chart and Area Chart)
+        # Graphs Section
         dbc.Row([
-            # Pie Chart and Area Chart Container
+            # Pie Chart Column
             dbc.Col([
                 dbc.Card([
+                    dbc.CardHeader([
+                        html.I(className="fas fa-chart-pie me-2"),
+                        "Payment Distribution"
+                    ], className="fw-bold"),
                     dbc.CardBody([
-                        dbc.Row([
-                            # Pie Chart Column
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardHeader([
-                                        html.I(className="fas fa-chart-pie me-2"),
-                                        "Deposits vs Installments"
-                                    ]),
-                                    dbc.CardBody([
-                                        dcc.Graph(id="deposits-installments-pie", style={"height": "400px"})
-                                    ])
-                                ])
-                            ], width=12, md=6),
-                            
-                            # Area Chart Column
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardHeader([
-                                        html.I(className="fas fa-chart-area me-2"),
-                                        "Stands Sold Over the Years"
-                                    ]),
-                                    dbc.CardBody([
-                                        dcc.Graph(id="stands-sold-area", style={"height": "400px"})
-                                    ])
-                                ])
-                            ], width=12, md=6)
-                        ])
+                        dcc.Graph(id="deposits-installments-pie", config={'displayModeBar': False})
                     ])
-                ], className="mb-4")
-            ], width=12)
-        ])
+                ], className="shadow-sm h-100")
+            ], width=12, lg=6, className="mb-4"),
+            
+            # Area Chart Column
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.I(className="fas fa-chart-line me-2"),
+                        html.Span(id="chart-title")
+                    ], className="fw-bold"),
+                    dbc.CardBody([
+                        dcc.Graph(id="stands-sold-area", config={'displayModeBar': False})
+                    ])
+                ], className="shadow-sm h-100")
+            ], width=12, lg=6, className="mb-4")
+        ], className="g-4")
     ], className="mt-4", fluid=True)
-])
+], className="bg-light min-vh-100 py-4")
 
-# Dashboard callback with year-based queries, new graphs, and YoY comparisons
+# Callback to control year dropdown visibility
+@callback(
+    Output("year-filter-container", "className"),
+    Input("time-filter-radio", "value")
+)
+def toggle_year_filter(time_filter):
+    if time_filter in ["yearly", "forecast"]:
+        return ""
+    return "d-none"
+
+# Callback to update chart title
+@callback(
+    Output("chart-title", "children"),
+    Input("time-filter-radio", "value"),
+    Input("year-dropdown", "value")
+)
+def update_chart_title(time_filter, selected_year):
+    title_map = {
+        "daily": "Hourly Stands Sales Trend",
+        "weekly": "Daily Stands Sales Trend (Last 7 Days)",
+        "yearly": f"Monthly Stands Sales Trend ({selected_year})",
+        "forecast": f"Monthly Forecast for {selected_year}" if ML_AVAILABLE else f"Monthly Trend ({selected_year})"
+    }
+    return [html.I(className="fas fa-chart-line me-2"), title_map.get(time_filter, "Stands Sales Trend")]
+
+# Main dashboard callback
 @callback(
     [Output("dashboard-connection-status", "children"),
      Output("total-stand-value", "children"),
@@ -191,13 +331,25 @@ layout = html.Div([
      Output("stand-value-yoy", "children"),
      Output("stands-sold-yoy", "children"),
      Output("deposit-yoy", "children"),
-     Output("installment-yoy", "children")],
-    [Input("refresh-dashboard-button", "n_clicks")],
-    [Input("year-dropdown", "value")],
+     Output("installment-yoy", "children"),
+     Output("report-data-store", "children")],  # Store as JSON string
+    [Input("refresh-dashboard-button", "n_clicks"),
+     Input("time-filter-radio", "value"),
+     Input("year-dropdown", "value")],
     prevent_initial_call=False
 )
-def update_dashboard_metrics(n_clicks, selected_year):
+def update_dashboard_metrics(n_clicks, time_filter, selected_year):
     engine = get_user_db_engine()
+    
+    # Period mapping
+    period_label_map = {
+        "daily": "Today",
+        "weekly": "Last 7 Days",
+        "yearly": f"Year: {selected_year}",
+        "forecast": f"Forecast for {selected_year}" if ML_AVAILABLE else f"Year: {selected_year}"
+    }
+    
+    period_text = period_label_map.get(time_filter, "Period: --")
     
     if not engine:
         # Return default values when not connected
@@ -208,7 +360,11 @@ def update_dashboard_metrics(n_clicks, selected_year):
         
         # Empty figures
         empty_fig = go.Figure()
-        empty_fig.update_layout(title="No Data - Please Connect to Database")
+        empty_fig.update_layout(
+            title="No Data - Please Connect to Database",
+            height=350,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
         
         # Default YoY comparison values
         default_yoy = html.Span([
@@ -216,153 +372,97 @@ def update_dashboard_metrics(n_clicks, selected_year):
             "N/A"
         ], className="text-muted small")
         
-        return [not_connected_alert, "$0", "0", "$0", "$0", "None", 
-                "Year: --", "Year: --", "Year: --", "Year: --", "$0", "--",
+        # Return empty JSON string for report data
+        return [not_connected_alert, "$0", "0", "$0", "$0", 
+                period_text, period_text, period_text, period_text,
                 empty_fig, empty_fig,
-                default_yoy, default_yoy, default_yoy, default_yoy]
+                default_yoy, default_yoy, default_yoy, default_yoy, "{}"]
     
     try:
-        current_year = selected_year
-        previous_year = current_year - 1
+        # Build WHERE clause based on time filter
+        if time_filter == "daily":
+            date_condition = "DATE(registration_date) = CURDATE()"
+            transaction_date_condition = "DATE(transaction_date) = CURDATE()"
+        elif time_filter == "weekly":
+            date_condition = "registration_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+            transaction_date_condition = "transaction_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+        else:  # yearly or forecast
+            date_condition = f"YEAR(registration_date) = {selected_year}"
+            transaction_date_condition = f"YEAR(transaction_date) = {selected_year}"
         
-        # Query 1: Total Stand Value for current and previous year
+        # Query 1: Total Stand Value
         try:
-            total_stand_value_query = """
-            SELECT 
-                YEAR(registration_date) AS year,
-                SUM(sale_value) AS total_sale_value 
-            FROM Stands 
-            WHERE YEAR(registration_date) IN (%s, %s)
-            GROUP BY YEAR(registration_date)
+            total_stand_value_query = f"""
+            SELECT SUM(sale_value) AS total_sale_value
+            FROM Stands
+            WHERE {date_condition}
             """
-            stand_value_df = pd.read_sql(total_stand_value_query, engine, params=(current_year, previous_year))
-            
-            current_stand_value = 0
-            previous_stand_value = 0
-            
-            for _, row in stand_value_df.iterrows():
-                if row['year'] == current_year:
-                    current_stand_value = row['total_sale_value'] if row['total_sale_value'] else 0
-                elif row['year'] == previous_year:
-                    previous_stand_value = row['total_sale_value'] if row['total_sale_value'] else 0
-                    
+            stand_value_df = pd.read_sql(total_stand_value_query, engine)
+            current_stand_value = stand_value_df.iloc[0]['total_sale_value'] if not stand_value_df.empty and not pd.isna(stand_value_df.iloc[0]['total_sale_value']) else 0
         except Exception as e:
+            print(f"Stand value query error: {e}")
             current_stand_value = 0
-            previous_stand_value = 0
-        
         formatted_stand_value = f"${current_stand_value:,.2f}" if current_stand_value else "$0"
         
-        # Query 2: Number of Stands Sold for current and previous year
+        # Query 2: Number of Stands Sold
         try:
-            stands_sold_query = """
-            SELECT 
-                YEAR(registration_date) AS year,
-                COUNT(stand_number) AS total_stands_sold 
-            FROM Stands 
-            WHERE YEAR(registration_date) IN (%s, %s)
-            GROUP BY YEAR(registration_date)
+            stands_sold_query = f"""
+            SELECT COUNT(stand_number) AS total_stands_sold
+            FROM Stands
+            WHERE {date_condition}
             """
-            stands_sold_df = pd.read_sql(stands_sold_query, engine, params=(current_year, previous_year))
-            
-            current_stands_sold = 0
-            previous_stands_sold = 0
-            
-            for _, row in stands_sold_df.iterrows():
-                if row['year'] == current_year:
-                    current_stands_sold = row['total_stands_sold'] if row['total_stands_sold'] else 0
-                elif row['year'] == previous_year:
-                    previous_stands_sold = row['total_stands_sold'] if row['total_stands_sold'] else 0
-                    
+            stands_sold_df = pd.read_sql(stands_sold_query, engine)
+            current_stands_sold = stands_sold_df.iloc[0]['total_stands_sold'] if not stands_sold_df.empty and not pd.isna(stands_sold_df.iloc[0]['total_stands_sold']) else 0
         except Exception as e:
+            print(f"Stands sold query error: {e}")
             current_stands_sold = 0
-            previous_stands_sold = 0
-        
         formatted_stands_sold = str(current_stands_sold) if current_stands_sold else "0"
         
-        # Query 3: Total Deposit for current and previous year
+        # Query 3: Total Deposit
         try:
-            total_deposit_query = """
-            SELECT 
-                YEAR(registration_date) AS year,
-                SUM(deposit_amount) AS total_deposit 
-            FROM customer_accounts 
-            WHERE YEAR(registration_date) IN (%s, %s)
-            GROUP BY YEAR(registration_date)
+            total_deposit_query = f"""
+            SELECT SUM(deposit_amount) AS total_deposit
+            FROM customer_accounts
+            WHERE {date_condition}
             """
-            deposit_df = pd.read_sql(total_deposit_query, engine, params=(current_year, previous_year))
-            
-            current_deposit = 0
-            previous_deposit = 0
-            
-            for _, row in deposit_df.iterrows():
-                if row['year'] == current_year:
-                    current_deposit = row['total_deposit'] if row['total_deposit'] else 0
-                elif row['year'] == previous_year:
-                    previous_deposit = row['total_deposit'] if row['total_deposit'] else 0
-                    
+            deposit_df = pd.read_sql(total_deposit_query, engine)
+            current_deposit = deposit_df.iloc[0]['total_deposit'] if not deposit_df.empty and not pd.isna(deposit_df.iloc[0]['total_deposit']) else 0
         except Exception as e:
+            print(f"Deposit query error: {e}")
             current_deposit = 0
-            previous_deposit = 0
-        
         formatted_deposit = f"${current_deposit:,.2f}" if current_deposit else "$0"
         
-        # Query 4: Total Installment for current and previous year
+        # Query 4: Total Installment
         try:
-            total_installment_query = """
-            SELECT 
-                YEAR(transaction_date) AS year,
-                SUM(amount) AS total_installment 
+            total_installment_query = f"""
+            SELECT SUM(amount) AS total_installment
             FROM customer_account_invoices
-            WHERE YEAR(transaction_date) IN (%s, %s) AND description = 'Instalment'
-            GROUP BY YEAR(transaction_date)
+            WHERE {transaction_date_condition} AND description = 'Instalment'
             """
-            installment_df = pd.read_sql(total_installment_query, engine, params=(current_year, previous_year))
-            
-            current_installment = 0
-            previous_installment = 0
-            
-            for _, row in installment_df.iterrows():
-                if row['year'] == current_year:
-                    current_installment = row['total_installment'] if row['total_installment'] else 0
-                elif row['year'] == previous_year:
-                    previous_installment = row['total_installment'] if row['total_installment'] else 0
-                    
+            installment_df = pd.read_sql(total_installment_query, engine)
+            current_installment = installment_df.iloc[0]['total_installment'] if not installment_df.empty and not pd.isna(installment_df.iloc[0]['total_installment']) else 0
         except Exception as e:
-            # Try without description filter
-            try:
-                total_installment_query = """
-                SELECT 
-                    YEAR(transaction_date) AS year,
-                    SUM(amount) AS total_installment 
-                FROM customer_account_invoices
-                WHERE YEAR(transaction_date) IN (%s, %s)
-                GROUP BY YEAR(transaction_date)
-                """
-                installment_df = pd.read_sql(total_installment_query, engine, params=(current_year, previous_year))
-                
-                current_installment = 0
-                previous_installment = 0
-                
-                for _, row in installment_df.iterrows():
-                    if row['year'] == current_year:
-                        current_installment = row['total_installment'] if row['total_installment'] else 0
-                    elif row['year'] == previous_year:
-                        previous_installment = row['total_installment'] if row['total_installment'] else 0
-            except:
-                current_installment = 0
-                previous_installment = 0
-        
+            print(f"Installment query error: {e}")
+            current_installment = 0
         formatted_installment = f"${current_installment:,.2f}" if current_installment else "$0"
         
-        # Format period text
-        period_text = f"Year: {current_year}"
+        # Store data for report (as JSON string)
+        report_data = {
+            'total_stand_value': formatted_stand_value,
+            'stands_sold': formatted_stands_sold,
+            'total_deposit': formatted_deposit,
+            'total_installment': formatted_installment,
+            'period_text': period_text
+        }
+        report_data_json = json.dumps(report_data)
         
+        # Connection status
         status = dbc.Alert([
             html.I(className="fas fa-check-circle me-2"),
-            f"Connected to database successfully! Showing data for Year: {current_year}"
+            f"Connected to database successfully! Showing data for {period_label_map[time_filter]}"
         ], color="success")
         
-        # YoY Comparison Calculations
+        # YoY Comparison (only for yearly view)
         def calculate_yoy_change(current, previous):
             if previous == 0:
                 if current == 0:
@@ -392,135 +492,333 @@ def update_dashboard_metrics(n_clicks, selected_year):
                     f"{change:+.1f}% (Prev: ${previous:,.0f})"
                 ], className=text_class)
         
-        # Calculate YoY changes
-        stand_value_yoy = calculate_yoy_change(current_stand_value, previous_stand_value)
-        stands_sold_yoy = calculate_yoy_change(current_stands_sold, previous_stands_sold)
-        deposit_yoy = calculate_yoy_change(current_deposit, previous_deposit)
-        installment_yoy = calculate_yoy_change(current_installment, previous_installment)
+        # Only calculate YoY for yearly view
+        if time_filter == "yearly":
+            previous_year = selected_year - 1
+            
+            # Get previous year values
+            try:
+                prev_stand_query = f"""
+                SELECT SUM(sale_value) AS total_sale_value
+                FROM Stands
+                WHERE YEAR(registration_date) = {previous_year}
+                """
+                prev_stand_df = pd.read_sql(prev_stand_query, engine)
+                previous_stand_value = prev_stand_df.iloc[0]['total_sale_value'] if not prev_stand_df.empty and not pd.isna(prev_stand_df.iloc[0]['total_sale_value']) else 0
+            except:
+                previous_stand_value = 0
+                
+            try:
+                prev_sold_query = f"""
+                SELECT COUNT(stand_number) AS total_stands_sold
+                FROM Stands
+                WHERE YEAR(registration_date) = {previous_year}
+                """
+                prev_sold_df = pd.read_sql(prev_sold_query, engine)
+                previous_stands_sold = prev_sold_df.iloc[0]['total_stands_sold'] if not prev_sold_df.empty and not pd.isna(prev_sold_df.iloc[0]['total_stands_sold']) else 0
+            except:
+                previous_stands_sold = 0
+                
+            try:
+                prev_deposit_query = f"""
+                SELECT SUM(deposit_amount) AS total_deposit
+                FROM customer_accounts
+                WHERE YEAR(registration_date) = {previous_year}
+                """
+                prev_deposit_df = pd.read_sql(prev_deposit_query, engine)
+                previous_deposit = prev_deposit_df.iloc[0]['total_deposit'] if not prev_deposit_df.empty and not pd.isna(prev_deposit_df.iloc[0]['total_deposit']) else 0
+            except:
+                previous_deposit = 0
+                
+            try:
+                prev_installment_query = f"""
+                SELECT SUM(amount) AS total_installment
+                FROM customer_account_invoices
+                WHERE YEAR(transaction_date) = {previous_year} AND description = 'Instalment'
+                """
+                prev_installment_df = pd.read_sql(prev_installment_query, engine)
+                previous_installment = prev_installment_df.iloc[0]['total_installment'] if not prev_installment_df.empty and not pd.isna(prev_installment_df.iloc[0]['total_installment']) else 0
+            except:
+                previous_installment = 0
+            
+            stand_value_yoy = calculate_yoy_change(current_stand_value, previous_stand_value)
+            stands_sold_yoy = calculate_yoy_change(current_stands_sold, previous_stands_sold)
+            deposit_yoy = calculate_yoy_change(current_deposit, previous_deposit)
+            installment_yoy = calculate_yoy_change(current_installment, previous_installment)
+        else:
+            # Default YoY for non-yearly views
+            default_yoy = html.Span([
+                html.I(className="fas fa-minus-circle me-1 text-muted"),
+                "N/A"
+            ], className="text-muted small")
+            stand_value_yoy = stands_sold_yoy = deposit_yoy = installment_yoy = default_yoy
         
-        # NEW GRAPHS SECTION
-        
-        # Pie Chart: Deposits vs Installments for selected year
+        # Pie Chart: Deposits vs Installments
         pie_data = [current_deposit, current_installment]
         pie_labels = ["Deposits", "Installments"]
-        pie_colors = ["#ffcc00", '#2c4bbc']
+        pie_colors = ["#28a745", '#ffc107']
         
         if sum(pie_data) > 0:
             pie_fig = go.Figure(data=[go.Pie(
                 labels=pie_labels, 
                 values=pie_data, 
-                hole=.3, 
-                marker=dict(colors=pie_colors)
+                hole=.4,
+                marker=dict(colors=pie_colors),
+                textinfo='percent+label',
+                hovertemplate="<b>%{label}</b><br>$%{value:,.2f}<br>(%{percent})",
+                textposition='inside'
             )])
             pie_fig.update_layout(
-                title_text='Deposits vs Installments',
-                height=400
+                title_text=f'Payment Distribution<br>({period_label_map[time_filter]})',
+                height=350,
+                margin=dict(l=20, r=20, t=50, b=20),
+                showlegend=False
             )
         else:
             pie_fig = go.Figure()
             pie_fig.update_layout(
-                title="No Data Available for Deposits and Installments",
-                height=400
+                title=f"No Payment Data Available<br>({period_label_map[time_filter]})",
+                height=350,
+                margin=dict(l=20, r=20, t=50, b=20)
             )
         
-        # Area Chart: Stands Sold Over the Years (last 5 years)
+        # Area Chart: Stands Sold Trend
         try:
-            # Get data for the last 5 years including current year
-            start_year = current_year - 4  # Last 5 years
-            
-            number_of_stands_query = """
-            SELECT 
-                YEAR(registration_date) AS year,
-                COUNT(stand_number) AS total_stands_sold 
-            FROM Stands 
-            WHERE YEAR(registration_date) >= %s
-            GROUP BY YEAR(registration_date)
-            ORDER BY year
-            """
-            number_of_stands_df = pd.read_sql(number_of_stands_query, engine, params=(start_year,))
-            
-            if not number_of_stands_df.empty:
-                # Ensure all years are present
-                all_years = list(range(start_year, current_year + 1))
-                existing_years = number_of_stands_df['year'].tolist()
+            if time_filter == "yearly" or time_filter == "forecast":
+                # Show trend for the selected year (monthly breakdown)
+                trend_query = f"""
+                SELECT 
+                    MONTH(registration_date) AS month,
+                    COUNT(stand_number) AS total_stands_sold
+                FROM Stands
+                WHERE YEAR(registration_date) = {selected_year}
+                GROUP BY MONTH(registration_date)
+                ORDER BY month
+                """
+                trend_df = pd.read_sql(trend_query, engine)
                 
-                # Add missing years with 0 stands sold
-                missing_years = []
-                for year in all_years:
-                    if year not in existing_years:
-                        missing_years.append({'year': year, 'total_stands_sold': 0})
+                # Create complete month series
+                all_months = pd.DataFrame({'month': range(1, 13)})
+                trend_df = all_months.merge(trend_df, on='month', how='left').fillna(0)
                 
-                if missing_years:
-                    missing_df = pd.DataFrame(missing_years)
-                    number_of_stands_df = pd.concat([number_of_stands_df, missing_df], ignore_index=True)
-                    number_of_stands_df.sort_values('year', inplace=True)
+                if time_filter == "forecast" and ML_AVAILABLE and not trend_df.empty:
+                    # Create forecast data
+                    forecast_df = create_forecast(trend_df, months_ahead=3)
+                    
+                    if not forecast_df.empty and len(forecast_df[forecast_df['type'] == 'forecast']) > 0:
+                        # Plot actual and forecast data
+                        area_fig = go.Figure()
+                        
+                        # Actual data
+                        actual_df = forecast_df[forecast_df['type'] == 'actual']
+                        if not actual_df.empty:
+                            area_fig.add_trace(go.Scatter(
+                                x=actual_df['month'],
+                                y=actual_df['total_stands_sold'],
+                                mode='lines+markers',
+                                name='Actual',
+                                line=dict(color="#007bff", width=3),
+                                marker=dict(size=6)
+                            ))
+                        
+                        # Forecast data
+                        forecast_points_df = forecast_df[forecast_df['type'] == 'forecast']
+                        if not forecast_points_df.empty and not actual_df.empty:
+                            # Get last actual point to connect smoothly
+                            last_actual = actual_df.iloc[-1]
+                            forecast_x = [last_actual['month']] + forecast_points_df['month'].tolist()
+                            forecast_y = [last_actual['total_stands_sold']] + forecast_points_df['total_stands_sold'].tolist()
+                            
+                            area_fig.add_trace(go.Scatter(
+                                x=forecast_x,
+                                y=forecast_y,
+                                mode='lines+markers',
+                                name='Forecast',
+                                line=dict(color="#ffc107", width=3, dash='dash'),
+                                marker=dict(size=6, symbol='diamond')
+                            ))
+                            
+                            # Add confidence interval (simplified)
+                            upper_bound = [y * 1.1 for y in forecast_y]
+                            lower_bound = [max(0, y * 0.9) for y in forecast_y]
+                            area_fig.add_trace(go.Scatter(
+                                x=forecast_x + forecast_x[::-1],
+                                y=upper_bound + lower_bound[::-1],
+                                fill='toself',
+                                fillcolor='rgba(255,193,7,0.2)',
+                                line=dict(color='rgba(255,255,255,0)'),
+                                hoverinfo="skip",
+                                showlegend=False,
+                                name='Confidence Interval'
+                            ))
+                        
+                        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                        extended_month_names = month_names + [f"Pred {i+1}" for i in range(3)]
+                        
+                        # Set up x-axis
+                        max_month = max(forecast_df['month']) if not forecast_df.empty else 12
+                        area_fig.update_layout(
+                            xaxis=dict(
+                                tickmode='array',
+                                tickvals=list(range(1, min(max_month + 1, 16))),
+                                ticktext=extended_month_names[:min(max_month, 15)]
+                            )
+                        )
+                    else:
+                        # Fallback to regular chart if forecast fails
+                        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                        x_data = [month_names[m-1] if 1 <= m <= 12 else f"Month {m}" for m in trend_df['month']]
+                        y_data = trend_df['total_stands_sold'].tolist()
+                        
+                        area_fig = go.Figure()
+                        area_fig.add_trace(go.Scatter(
+                            x=x_data,
+                            y=y_data,
+                            mode='lines+markers',
+                            fill='tozeroy',
+                            name='Stands Sold',
+                            line=dict(color="#007bff", width=3),
+                            marker=dict(size=6)
+                        ))
+                else:
+                    # Regular yearly view
+                    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                    x_data = [month_names[m-1] if 1 <= m <= 12 else f"Month {m}" for m in trend_df['month']]
+                    y_data = trend_df['total_stands_sold'].tolist()
+                    
+                    area_fig = go.Figure()
+                    area_fig.add_trace(go.Scatter(
+                        x=x_data,
+                        y=y_data,
+                        mode='lines+markers',
+                        fill='tozeroy',
+                        name='Stands Sold',
+                        line=dict(color="#007bff", width=3),
+                        marker=dict(size=6)
+                    ))
                 
-                area_fig = go.Figure()
-                area_fig.add_trace(go.Scatter(
-                    x=number_of_stands_df['year'],
-                    y=number_of_stands_df['total_stands_sold'],
-                    mode='lines+markers',
-                    fill='tozeroy',  # Fill the area under the line
-                    name='Total Stands Sold',
-                    line=dict(color="#ffcc00")
-                ))
                 area_fig.update_layout(
-                    title='Total Stands Sold Over the Years',
-                    xaxis_title='Year',
-                    yaxis_title='Number of Stands Sold',
+                    title=f"{'Monthly Forecast' if time_filter == 'forecast' and ML_AVAILABLE else 'Monthly Trend'} ({selected_year})",
+                    xaxis_title='Month',
+                    yaxis_title='Stands Sold',
                     template='plotly_white',
-                    height=400
+                    height=350,
+                    margin=dict(l=40, r=20, t=50, b=40)
                 )
-            else:
-                # Create empty chart with all years
-                all_years = list(range(start_year, current_year + 1))
-                empty_data = {'year': all_years, 'total_stands_sold': [0] * len(all_years)}
-                empty_df = pd.DataFrame(empty_data)
+                
+            elif time_filter == "weekly":
+                # Show daily trend for last 7 days
+                trend_query = """
+                SELECT 
+                    DATE(registration_date) AS day,
+                    COUNT(stand_number) AS total_stands_sold
+                FROM Stands
+                WHERE registration_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                GROUP BY DATE(registration_date)
+                ORDER BY day
+                """
+                trend_df = pd.read_sql(trend_query, engine)
+                
+                # Generate last 7 days
+                end_date = datetime.date.today()
+                start_date = end_date - datetime.timedelta(days=6)
+                date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+                date_df = pd.DataFrame({'day': date_range.date})
+                trend_df['day'] = pd.to_datetime(trend_df['day']).dt.date
+                trend_df = date_df.merge(trend_df, left_on='day', right_on='day', how='left').fillna(0)
+                
+                x_data = [d.strftime('%a') for d in trend_df['day']]
+                y_data = trend_df['total_stands_sold'].tolist()
                 
                 area_fig = go.Figure()
                 area_fig.add_trace(go.Scatter(
-                    x=empty_df['year'],
-                    y=empty_df['total_stands_sold'],
+                    x=x_data,
+                    y=y_data,
                     mode='lines+markers',
                     fill='tozeroy',
-                    name='Total Stands Sold',
-                    line=dict(color="#ffcc00")
+                    name='Stands Sold',
+                    line=dict(color="#007bff", width=3),
+                    marker=dict(size=6)
                 ))
                 area_fig.update_layout(
-                    title='Total Stands Sold Over the Years',
-                    xaxis_title='Year',
-                    yaxis_title='Number of Stands Sold',
+                    title='Daily Stands Sales Trend (Last 7 Days)',
+                    xaxis_title='Day',
+                    yaxis_title='Stands Sold',
                     template='plotly_white',
-                    height=400
+                    height=350,
+                    margin=dict(l=40, r=20, t=50, b=40)
                 )
+                
+            else:  # daily
+                # Show hourly trend for today
+                trend_query = """
+                SELECT 
+                    HOUR(registration_date) AS hour,
+                    COUNT(stand_number) AS total_stands_sold
+                FROM Stands
+                WHERE DATE(registration_date) = CURDATE()
+                GROUP BY HOUR(registration_date)
+                ORDER BY hour
+                """
+                trend_df = pd.read_sql(trend_query, engine)
+                
+                # Generate 24 hours
+                all_hours = pd.DataFrame({'hour': range(24)})
+                trend_df = all_hours.merge(trend_df, on='hour', how='left').fillna(0)
+                x_data = [f"{h}:00" for h in trend_df['hour']]
+                y_data = trend_df['total_stands_sold'].tolist()
+                
+                area_fig = go.Figure()
+                area_fig.add_trace(go.Scatter(
+                    x=x_data,
+                    y=y_data,
+                    mode='lines+markers',
+                    fill='tozeroy',
+                    name='Stands Sold',
+                    line=dict(color="#007bff", width=3),
+                    marker=dict(size=6)
+                ))
+                area_fig.update_layout(
+                    title='Hourly Stands Sales Trend (Today)',
+                    xaxis_title='Hour',
+                    yaxis_title='Stands Sold',
+                    template='plotly_white',
+                    height=350,
+                    margin=dict(l=40, r=20, t=50, b=40)
+                )
+                
         except Exception as e:
-            # Handle error gracefully
+            print(f"Chart generation error: {e}")
             area_fig = go.Figure()
             area_fig.update_layout(
-                title='Total Stands Sold Over the Years',
-                xaxis_title='Year',
-                yaxis_title='Number of Stands Sold',
-                template='plotly_white',
-                height=400
+                title='Error Loading Trend Data',
+                height=350,
+                margin=dict(l=40, r=20, t=50, b=40)
             )
 
         return [status, formatted_stand_value, formatted_stands_sold, formatted_deposit, 
-                formatted_installment,  period_text, period_text,
-                period_text, str(current_year),
+                formatted_installment, period_text, period_text,
+                period_text, period_text,
                 pie_fig, area_fig,
-                stand_value_yoy, stands_sold_yoy, deposit_yoy, installment_yoy]
+                stand_value_yoy, stands_sold_yoy, deposit_yoy, installment_yoy, report_data_json]
         
     except Exception as e:
+        print(f"Main callback error: {e}")
         error_alert = dbc.Alert([
             html.I(className="fas fa-exclamation-triangle me-2"),
             f"Database error: {str(e)}"
         ], color="danger")
         
-        period_text = f"Year: {selected_year}" if selected_year else "Year: --"
-        
         # Empty figures for error case
         empty_fig = go.Figure()
-        empty_fig.update_layout(title="Error Loading Data")
+        empty_fig.update_layout(
+            title="Error Loading Data",
+            height=350,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
         
         # Default YoY comparison values
         default_yoy = html.Span([
@@ -528,10 +826,108 @@ def update_dashboard_metrics(n_clicks, selected_year):
             "N/A"
         ], className="text-muted small")
         
-        return [error_alert, "$0", "0", "$0", "$0", "None", 
-                period_text, period_text, period_text, period_text, "$0", "--" if not selected_year else str(selected_year),
+        return [error_alert, "$0", "0", "$0", "$0", 
+                period_text, period_text, period_text, period_text,
                 empty_fig, empty_fig,
-                default_yoy, default_yoy, default_yoy, default_yoy]
+                default_yoy, default_yoy, default_yoy, default_yoy, "{}"]
     finally:
         if engine:
-            engine.dispose()
+            try:
+                engine.dispose()
+            except:
+                pass
+
+# Callback for downloading report
+@callback(
+    Output("download-report", "data"),
+    Input("download-report-button", "n_clicks"),
+    State("time-filter-radio", "value"),
+    State("year-dropdown", "value"),
+    State("report-data-store", "children"),
+    prevent_initial_call=True
+)
+def download_report(n_clicks, time_filter, selected_year, report_data_json):
+    if n_clicks is None:
+        return no_update
+    
+    try:
+        # Parse the JSON string back to dict
+        if report_data_json and report_data_json != "{}":
+            report_data = json.loads(report_data_json)
+        else:
+            report_data = {}
+        
+        # Generate report content
+        period_label_map = {
+            "daily": "Today",
+            "weekly": "Last 7 Days",
+            "yearly": f"Year: {selected_year}",
+            "forecast": f"Forecast for {selected_year}" if ML_AVAILABLE else f"Year: {selected_year}"
+        }
+        
+        period_text = period_label_map.get(time_filter, "Unknown Period")
+        
+        content = f"""Sales Dashboard Report
+=================
+
+Generated on: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Period: {period_text}
+
+SUMMARY METRICS
+---------------
+Total Stand Value: {report_data.get('total_stand_value', '$0')}
+Stands Sold: {report_data.get('stands_sold', '0')}
+Total Deposit: {report_data.get('total_deposit', '$0')}
+Total Installment: {report_data.get('total_installment', '$0')}
+
+Note: This is a simplified text report. For full graphical reports, please use the export to PDF feature in your browser.
+"""
+        
+        return dict(content=content, filename=f"sales_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    except Exception as e:
+        print(f"Report generation error: {e}")
+        return no_update
+
+# Callback for generating weekly PDF report
+@callback(
+    Output("manual-report-status", "children"),
+    Input("generate-weekly-report", "n_clicks"),
+    State("year-dropdown", "value"),
+    prevent_initial_call=True
+)
+def generate_weekly_report(n_clicks, selected_year):
+    if n_clicks is None:
+        return no_update
+    
+    try:
+        # Get current week number
+        current_week = datetime.datetime.now().isocalendar()[1]
+        
+        # Initialize report generator if not already done
+        if session.get('db_connection_string'):
+            generator = get_report_generator()
+            if not generator:
+                generator = initialize_report_generator(session['db_connection_string'])
+            
+            # Generate report
+            filepath = generator.generate_pdf_report(selected_year, current_week)
+            if filepath:
+                return dbc.Alert([
+                    html.I(className="fas fa-check-circle me-2"),
+                    f"PDF Report generated successfully!"
+                ], color="success")
+            else:
+                return dbc.Alert([
+                    html.I(className="fas fa-exclamation-triangle me-2"),
+                    "Failed to generate PDF report"
+                ], color="warning")
+        else:
+            return dbc.Alert([
+                html.I(className="fas fa-exclamation-triangle me-2"),
+                "No database connection - cannot generate report"
+            ], color="danger")
+    except Exception as e:
+        return dbc.Alert([
+            html.I(className="fas fa-exclamation-triangle me-2"),
+            f"Error generating PDF report: {str(e)}"
+        ], color="danger")

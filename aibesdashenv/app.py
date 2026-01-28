@@ -1,11 +1,28 @@
+# app.py
 import dash
 from dash import dcc, html, callback, Input, Output
 import dash_bootstrap_components as dbc
-from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis
 from flask import session
 from sqlalchemy import create_engine
 import datetime
 import uuid
+import os
+
+# Import your pages
+from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis, reports_view
+
+# app.py
+import dash
+from dash import dcc, html, callback, Input, Output
+import dash_bootstrap_components as dbc
+from flask import session, send_from_directory
+from sqlalchemy import create_engine
+import datetime
+import uuid
+import os
+
+# Import your pages
+from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis, reports_view
 
 # Initialize the Dash app with suppress_callback_exceptions=True
 app = dash.Dash(__name__, 
@@ -17,29 +34,39 @@ app = dash.Dash(__name__,
                 server=True)
 
 # Add server-side session support
-app.server.secret_key = 'your-secret-key-here'  # Change this to a random secret key
+app.server.secret_key = 'your-secret-key-here-change-this-to-something-random'  # Change this to a random secret key
+
+# Serve generated reports - CORRECTED VERSION
+@app.server.route('/generated_reports/<path:filename>')
+def serve_report(filename):
+    reports_dir = os.path.join(os.path.dirname(__file__), "generated_reports")
+    if not os.path.exists(reports_dir):
+        os.makedirs(reports_dir)
+    return send_from_directory(reports_dir, filename)
 
 # Add custom CSS for purple color
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     dcc.Store(id='session-id'),  # For multi-user session management
     
-   
-
     # Top navigation bar with connection status
     dbc.Navbar(
         dbc.Container([
-            html.Img(src="/assets/aibes.png", style={"width": "5.9rem", 'margin-right': '200px', 'margin-left': '0px'}),
+            html.Img(src="/assets/aibes.png", style={"height": "3rem", 'margin-right': '20px'}),
             dbc.NavbarToggler(id="navbar-toggler"),
             dbc.Collapse(
                 dbc.Nav(
                     [
                         dbc.NavLink([html.I(className="fas fa-home me-2"), "Home"], href="/", active="exact"),
-                        dbc.NavLink([html.I(className="fas fa- me-2"), "Dashboard"], href="/apps/dashboard", active="exact"),
+                        dbc.NavLink([html.I(className="fa-solid fa-grip me-2"), "Dashboard"], href="/apps/dashboard", active="exact"),
                         dbc.NavLink([html.I(className="fas fa-chart-bar me-2"), "Data Analysis"], href="/apps/data_analysis", active="exact"),
-                        dbc.NavLink([html.I(className="fas fa-info-circle me-2"), "About"], href="/apps/about", active="exact"),
-                        dbc.NavLink([html.I(className="fas fa-sign-in-alt me-2"), "Login"], href="/apps/db_connection", active="exact", id="login-nav-link"),
-                        dbc.NavLink([html.I(className="fas fa-sign-out-alt me-2"), "Logout"], href="/apps/logout", active="exact", id="logout-nav-link"),
+                        dbc.DropdownMenu([
+                            dbc.DropdownMenuItem("Land Bank", href="/apps/land_bank_analysis"),
+                            dbc.DropdownMenuItem("Project Analysis", href="/apps/project_analysis"),
+                            dbc.DropdownMenuItem("Sales Analysis", href="/apps/sales_analysis"),
+                        ], nav=True, in_navbar=True, label="Analysis Modules", toggle_class_name="dropdown-toggle"),
+                        dbc.NavLink([html.I(className="fas fa-file-pdf me-2"), "Reports"], href="/apps/reports_view", active="exact"),
+                        dbc.NavLink([html.I(className="fas fa-database me-2"), "Database"], href="/apps/db_connection", active="exact", id="db-nav-link"),
                     ],
                     className="me-auto",
                     navbar=True,
@@ -48,7 +75,7 @@ app.layout = html.Div([
                 navbar=True,
             ),
             # Connection Status in Navbar
-            html.Div(id="navbar-connection-status", className="d-flex align-items-center ms-3"),
+            html.Div(id="navbar-connection-status", className="d-flex align-items-center ms-2"),
         ]),
         color="dark",
         dark=True,
@@ -93,28 +120,19 @@ def display_page(pathname):
             ], className="text-center")
         ]), connection_status]
     
-    # Check if trying to access dashboard without connection
-    if pathname == '/apps/dashboard':
-        if not get_user_db_connection():
-            # Show error on dashboard page
-            error_page = html.Div([
-                dbc.Container([
-                    dbc.Alert([
-                        html.I(className="fas fa-exclamation-triangle me-2"),
-                        "Database connection required! Please connect to database first."
-                    ], color="warning", className="mt-5 text-center"),
-                    dbc.Button([
-                        html.I(className="fas fa-database me-2"),
-                        "Go to Connection Page"
-                    ], href="/apps/db_connection", color="primary", className="mt-3")
-                ], className="text-center")
-            ])
-            return [error_page, connection_status]
+    # Check if trying to access protected pages without connection
+    protected_pages = [
+        '/apps/dashboard', 
+        '/apps/data_analysis', 
+        '/apps/land_bank_analysis', 
+        '/apps/project_analysis', 
+        '/apps/sales_analysis', 
+        '/apps/reports_view'
+    ]
     
-    # Check if trying to access data analysis pages without connection
-    if pathname in ['/apps/data_analysis', '/apps/land_bank_analysis', '/apps/project_analysis', '/apps/sales_analysis']:
+    if pathname in protected_pages:
         if not get_user_db_connection():
-            # Show error on analysis pages
+            # Show error on protected pages
             error_page = html.Div([
                 dbc.Container([
                     dbc.Alert([
@@ -156,7 +174,7 @@ def display_page(pathname):
                 ], className="text-center")
             ])
             return [already_connected_page, connection_status]
-    
+        
     # Normal page routing
     if pathname == '/':
         return [home.layout, connection_status]
@@ -172,14 +190,15 @@ def display_page(pathname):
         return [project_analysis.layout, connection_status]
     elif pathname == '/apps/sales_analysis':
         return [sales_analysis.layout, connection_status]
-    elif pathname == '/apps/about':
-        return [html.Div([html.H1("About Page")]), connection_status]
+    elif pathname == '/apps/reports_view':
+        return [reports_view.layout, connection_status]
     # Add additional pages as necessary
     else:
         not_found = dbc.Container([
             html.H1("404 - Page not found"),
-            html.P("The requested page does not exist.")
-        ])
+            html.P("The requested page does not exist."),
+            dbc.Button("Go Home", href="/", color="primary", className="mt-3")
+        ], className="text-center mt-5")
         return [not_found, connection_status]
 
 # Callback for navbar toggle
@@ -190,7 +209,7 @@ def display_page(pathname):
 )
 def toggle_navbar_collapse(n):
     if n:
-        return True
+        return not False  # Toggle state
     return False
 
 # Function to get user-specific database connection
@@ -220,7 +239,8 @@ def get_connection_status_component():
                     f"Connected: {db_name}"
                 ], className="text-success small")
             ], className="d-flex align-items-center")
-        except:
+        except Exception as e:
+            print(f"Connection status check error: {e}")
             return html.Div([
                 html.Span([
                     html.I(className="fas fa-exclamation-triangle text-warning me-1"),
