@@ -6,9 +6,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from flask import session
 
 
-# Layout for the database connection page
+# Layout for database connection page
 layout = html.Div([
-    dcc.Location(id="db-connection-url", refresh=True),  # Changed to refresh=True for proper redirect
+    dcc.Location(id="db-connection-url", refresh=True),  
     
     # Background image div
     html.Div(
@@ -140,7 +140,7 @@ layout = html.Div([
     prevent_initial_call=True
 )
 def connect_to_database(n_clicks, host, database, username, password):
-    # Validate required fields
+    # Validation of required fields
     if not host or not host.strip():
         return [dbc.Alert(
             [html.I(className="fas fa-exclamation-circle me-2"), "Host is required!"],
@@ -163,7 +163,7 @@ def connect_to_database(n_clicks, host, database, username, password):
         ), dash.no_update]
     
     try:
-        # Create connection string
+        # connection string
         if password:
             connection_string = f"mysql+pymysql://{username}:{password}@{host}/{database}"
         else:
@@ -186,7 +186,7 @@ def connect_to_database(n_clicks, host, database, username, password):
         className="mt-3"
         )
         
-        return [success_alert, "/apps/dashboard"]  # This will now properly redirect
+        return [success_alert, "/apps/dashboard"] 
         
     except SQLAlchemyError as e:
         return [dbc.Alert([

@@ -150,7 +150,7 @@ layout = html.Div([
     ], className="mt-4", fluid=True)
 ])
 
-# load project options, callback
+# loading project options, callback
 @callback(
     Output("project-project-dropdown", "options"),
     Input("project-year-dropdown", "value")

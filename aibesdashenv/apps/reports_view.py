@@ -23,10 +23,15 @@ layout = html.Div([
                                 dbc.Button([
                                     html.I(className="fas fa-sync me-2"),
                                     "Refresh Reports"
-                                ], id="refresh-reports-btn", color="primary", className="mb-3")
+                                ], id="refresh-reports-btn", color="primary", className="mb-3"),
+                                dbc.Button([
+                                    html.I(className="fas fa-plus-circle me-2"),
+                                    "Generate New Report"
+                                ], id="generate-new-report-btn", color="success", className="mb-3 ms-2")
                             ], width=12)
                         ]),
-                        html.Div(id="reports-table-container")
+                        html.Div(id="reports-table-container"),
+                        html.Div(id="generate-report-status", className="mt-3")
                     ])
                 ], className="shadow-sm")
             ], width=12)
@@ -48,7 +53,7 @@ layout = html.Div([
 ], className="bg-light min-vh-100 py-4")
 
 def generate_reports_table(reports):
-    """Generate the reports table without stands sold column"""
+    """Generate the reports table"""
     if not reports:
         return dbc.Alert("No reports found.", color="info")
     
@@ -56,9 +61,10 @@ def generate_reports_table(reports):
     table_header = [
         html.Thead([
             html.Tr([
-                html.Th("Report Name", style={"width": "40%"}),
-                html.Th("Period", style={"width": "30%"}),
-                html.Th("Generated Date", style={"width": "20%"}),
+                html.Th("Report Name", style={"width": "35%"}),
+                html.Th("Week", style={"width": "15%"}),
+                html.Th("Period", style={"width": "25%"}),
+                html.Th("Generated Date", style={"width": "15%"}),
                 html.Th("Actions", style={"width": "10%"})
             ])
         ])
@@ -80,8 +86,9 @@ def generate_reports_table(reports):
             
             row = html.Tr([
                 html.Td(html.Strong(report['filename'])),
-                html.Td(f"Week {report['week']} ({week_start_date.strftime('%Y-%m-%d')} to {week_end_date.strftime('%Y-%m-%d')})"),
-                html.Td(generated_date.strftime('%Y-%m-%d %H:%M')),
+                html.Td(f"Week {report['week']}", className="text-center"),
+                html.Td(f"{week_start_date.strftime('%Y-%m-%d')} to {week_end_date.strftime('%Y-%m-%d')}"),
+                html.Td(generated_date.strftime('%Y-%m-%d'), className="text-center"),
                 html.Td([
                     dbc.Button([
                         html.I(className="fas fa-download me-1"),
@@ -134,6 +141,52 @@ def refresh_reports(n_clicks):
     except Exception as e:
         return dbc.Alert(f"Error loading reports: {str(e)}", color="danger")
 
+@callback(
+    Output("generate-report-status", "children"),
+    Input("generate-new-report-btn", "n_clicks"),
+    prevent_initial_call=True
+)
+def generate_new_report(n_clicks):
+    """Generate a new report for the current week"""
+    if n_clicks is None:
+        return no_update
+    
+    try:
+        generator = get_report_generator()
+        if not generator and session.get('db_connection_string'):
+            from .reports import initialize_report_generator
+            generator = initialize_report_generator(session['db_connection_string'])
+        
+        if generator:
+            # Get current year and week
+            today = datetime.date.today()
+            year = today.isocalendar()[0]
+            week_number = today.isocalendar()[1]
+            
+            # Generate report
+            filepath = generator.generate_pdf_report(year, week_number)
+            
+            if filepath:
+                return dbc.Alert([
+                    html.I(className="fas fa-check-circle me-2"),
+                    f"Report generated successfully for Week {week_number}, {year}!"
+                ], color="success")
+            else:
+                return dbc.Alert([
+                    html.I(className="fas fa-exclamation-triangle me-2"),
+                    "Failed to generate report. Please check the logs."
+                ], color="warning")
+        else:
+            return dbc.Alert([
+                html.I(className="fas fa-exclamation-triangle me-2"),
+                "Reports system not initialized. Please connect to database first."
+            ], color="danger")
+    except Exception as e:
+        return dbc.Alert([
+            html.I(className="fas fa-exclamation-triangle me-2"),
+            f"Error generating report: {str(e)}"
+        ], color="danger")
+
 # Simplified callback for preview modal
 @callback(
     Output("report-preview-modal", "is_open"),
@@ -180,7 +233,7 @@ def toggle_preview_modal(n1, n2):
                 # Create preview content with iframe for PDF viewing
                 preview_content = [
                     html.H5(f"Report: {filename}", className="mb-3"),
-                    html.P("Click 'Open in New Tab' to view the full report:", className="text-muted"),
+                    html.P("Click the buttons below to view or download the report:", className="text-muted"),
                     html.Div([
                         html.A([
                             dbc.Button([
@@ -196,7 +249,11 @@ def toggle_preview_modal(n1, n2):
                         ], href=f"/generated_reports/{filename}")
                     ], className="mb-3"),
                     html.Hr(),
-                    html.P("Note: If the PDF doesn't display above, please use the 'Open in New Tab' button.", className="small text-muted")
+                    html.P([
+                        html.Strong("Report Preview:"),
+                        html.Br(),
+                        "PDF preview requires browser plugin. Use the buttons above for full report access."
+                    ], className="small text-muted")
                 ]
                 return True, preview_content
             else:

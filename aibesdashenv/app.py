@@ -33,10 +33,10 @@ app = dash.Dash(__name__,
                 suppress_callback_exceptions=True,
                 server=True)
 
-# Add server-side session support
-app.server.secret_key = 'your-secret-key-here-change-this-to-something-random'  # Change this to a random secret key
+#server-side session support
+app.server.secret_key = 'bati-aibes'  
 
-# Serve generated reports - CORRECTED VERSION
+# Serve generated reports 
 @app.server.route('/generated_reports/<path:filename>')
 def serve_report(filename):
     reports_dir = os.path.join(os.path.dirname(__file__), "generated_reports")
@@ -44,12 +44,13 @@ def serve_report(filename):
         os.makedirs(reports_dir)
     return send_from_directory(reports_dir, filename)
 
-# Add custom CSS for purple color
+
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
+    #multi-user session management
     dcc.Store(id='session-id'),  # For multi-user session management
     
-    # Top navigation bar with connection status
+    # navbar (top)
     dbc.Navbar(
         dbc.Container([
             html.Img(src="/assets/aibes.png", style={"height": "3rem", 'margin-right': '20px'}),
@@ -59,7 +60,6 @@ app.layout = html.Div([
                     [
                         dbc.NavLink([html.I(className="fas fa-home me-2"), "Home"], href="/", active="exact"),
                         dbc.NavLink([html.I(className="fa-solid fa-grip me-2"), "Dashboard"], href="/apps/dashboard", active="exact"),
-                        dbc.NavLink([html.I(className="fas fa-chart-bar me-2"), "Data Analysis"], href="/apps/data_analysis", active="exact"),
                         dbc.DropdownMenu([
                             dbc.DropdownMenuItem("Land Bank", href="/apps/land_bank_analysis"),
                             dbc.DropdownMenuItem("Project Analysis", href="/apps/project_analysis"),
@@ -67,6 +67,8 @@ app.layout = html.Div([
                         ], nav=True, in_navbar=True, label="Analysis Modules", toggle_class_name="dropdown-toggle"),
                         dbc.NavLink([html.I(className="fas fa-file-pdf me-2"), "Reports"], href="/apps/reports_view", active="exact"),
                         dbc.NavLink([html.I(className="fas fa-database me-2"), "Database"], href="/apps/db_connection", active="exact", id="db-nav-link"),
+                        dbc.NavLink([html.I(className="fas fa-cogs me-2"), "Settings"], href="/apps/settings", active="exact"),
+
                     ],
                     className="me-auto",
                     navbar=True,
@@ -100,7 +102,7 @@ def initialize_session(pathname):
                Output('navbar-connection-status', 'children')],
               [Input('url', 'pathname')])
 def display_page(pathname):
-    # Check connection status for navbar
+    #connection status for navbar
     connection_status = get_connection_status_component()
     
     # Handle logout
@@ -120,10 +122,10 @@ def display_page(pathname):
             ], className="text-center")
         ]), connection_status]
     
-    # Check if trying to access protected pages without connection
+    #protected pages 
     protected_pages = [
         '/apps/dashboard', 
-        '/apps/data_analysis', 
+        '/apps/settings', 
         '/apps/land_bank_analysis', 
         '/apps/project_analysis', 
         '/apps/sales_analysis', 
@@ -132,7 +134,7 @@ def display_page(pathname):
     
     if pathname in protected_pages:
         if not get_user_db_connection():
-            # Show error on protected pages
+            #protected pages error
             error_page = html.Div([
                 dbc.Container([
                     dbc.Alert([
@@ -147,10 +149,10 @@ def display_page(pathname):
             ])
             return [error_page, connection_status]
     
-    # Check if trying to access login when already connected
+    # Check if already connected
     if pathname == '/apps/db_connection':
         if get_user_db_connection():
-            # Show already connected message
+            #already connected message
             already_connected_page = html.Div([
                 dbc.Container([
                     dbc.Alert([
@@ -175,15 +177,13 @@ def display_page(pathname):
             ])
             return [already_connected_page, connection_status]
         
-    # Normal page routing
+    #page routing
     if pathname == '/':
         return [home.layout, connection_status]
     elif pathname == '/apps/db_connection':
         return [db_connection.layout, connection_status]
     elif pathname == '/apps/dashboard':
         return [dashboard.layout, connection_status]
-    elif pathname == '/apps/data_analysis':
-        return [data_analysis.layout, connection_status]
     elif pathname == '/apps/land_bank_analysis':
         return [land_bank_analysis.layout, connection_status]
     elif pathname == '/apps/project_analysis':
@@ -192,7 +192,7 @@ def display_page(pathname):
         return [sales_analysis.layout, connection_status]
     elif pathname == '/apps/reports_view':
         return [reports_view.layout, connection_status]
-    # Add additional pages as necessary
+
     else:
         not_found = dbc.Container([
             html.H1("404 - Page not found"),
@@ -209,7 +209,7 @@ def display_page(pathname):
 )
 def toggle_navbar_collapse(n):
     if n:
-        return not False  # Toggle state
+        return not False  
     return False
 
 # Function to get user-specific database connection
@@ -229,7 +229,7 @@ def get_connection_status_component():
         try:
             engine = create_engine(session['db_connection_string'])
             connection = engine.connect()
-            # Get database name from connection string
+            # Get database name 
             db_name = session['db_connection_string'].split('/')[-1]
             connection.close()
             

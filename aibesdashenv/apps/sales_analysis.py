@@ -291,7 +291,7 @@ def update_sales_analysis(n_clicks, selected_year, analysis_type):
             else:
                 trend_df['period_name'] = trend_df['period'].apply(lambda x: f"Project {x}")
             
-            # Handle missing periods
+            # Handling missing periods
             if analysis_type in ['monthly', 'quarterly']:
                 existing_periods = trend_df['period'].tolist()
                 missing_periods = []

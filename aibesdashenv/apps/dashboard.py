@@ -1,4 +1,3 @@
-# app.py (main dashboard file)
 import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output, callback, State, no_update
 from flask import session
@@ -37,14 +36,14 @@ def create_forecast(df_monthly, months_ahead=3):
         return pd.DataFrame(columns=['month', 'total_stands_sold', 'type'])
     
     try:
-        # Only use scikit-learn if available
+        #use scikit-learn if available
         if ML_AVAILABLE:
-            # Prepare data for linear regression
+            # Preparation of the data for linear regression
             df_monthly = df_monthly.sort_values('month')
             X = np.array(df_monthly['month']).reshape(-1, 1)
             y = df_monthly['total_stands_sold'].values
             
-            # Check if we have valid data
+            # data validation
             if len(y) < 2 or np.all(y == 0):
                 return simple_forecast(df_monthly, months_ahead)
             
@@ -58,20 +57,20 @@ def create_forecast(df_monthly, months_ahead=3):
             future_X = np.array(future_months).reshape(-1, 1)
             predictions = model.predict(future_X)
             
-            # Ensure no negative predictions
+            # no negative predictions
             predictions = np.maximum(predictions, 0)
             
-            # Create forecast dataframe
+            # forecast dataframe
             forecast_df = pd.DataFrame({
                 'month': future_months,
                 'total_stands_sold': predictions,
                 'type': 'forecast'
             })
         else:
-            # Use simple forecasting if ML not available
+            #simple forecasting if ML not available
             return simple_forecast(df_monthly, months_ahead)
             
-        # Add actual data
+        #actual data
         df_monthly['type'] = 'actual'
         result_df = pd.concat([df_monthly[['month', 'total_stands_sold', 'type']], forecast_df], ignore_index=True)
         
@@ -93,18 +92,18 @@ def simple_forecast(df_monthly, months_ahead=3):
     recent_data = df_monthly['total_stands_sold'].tail(min(3, len(df_monthly)))
     avg_value = recent_data.mean() if not recent_data.empty else 0
     
-    # Create forecast data
+    #forecast data
     last_month = df_monthly['month'].max()
     
     forecast_data = []
     for i in range(1, months_ahead + 1):
         forecast_data.append({
             'month': last_month + i,
-            'total_stands_sold': max(0, avg_value),  # Ensure non-negative
+            'total_stands_sold': max(0, avg_value),  #no non-negative
             'type': 'forecast'
         })
     
-    # Add actual data
+    #actual data
     df_monthly['type'] = 'actual'
     result_df = pd.concat([df_monthly[['month', 'total_stands_sold', 'type']], 
                           pd.DataFrame(forecast_data)], ignore_index=True)
@@ -113,10 +112,10 @@ def simple_forecast(df_monthly, months_ahead=3):
 
 # Layout
 layout = html.Div([
-    # Hidden div for storing report data (store as string)
+    #storing report data
     html.Div(id="report-data-store", style={"display": "none"}),
     
-    # Connection status indicator
+    #Connection status indicator
     html.Div(id="dashboard-connection-status"),
     
     # Filters Section
@@ -207,7 +206,7 @@ layout = html.Div([
                 ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
             
-            # Number of Stands Sold Card
+            # Number of stands sold 
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
@@ -224,7 +223,7 @@ layout = html.Div([
                 ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
             
-            # Total Deposit Card
+            # Total deposit card
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
@@ -241,7 +240,7 @@ layout = html.Div([
                 ], className="shadow-sm h-100")
             ], width=12, md=6, lg=3),
             
-            # Total Installment Card
+            # Total installment card
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
@@ -259,9 +258,9 @@ layout = html.Div([
             ], width=12, md=6, lg=3),
         ], className="mb-4 g-3"),
         
-        # Graphs Section
+        # Graphs 
         dbc.Row([
-            # Pie Chart Column
+            # Pie chart 
             dbc.Col([
                 dbc.Card([
                     dbc.CardHeader([
@@ -273,8 +272,7 @@ layout = html.Div([
                     ])
                 ], className="shadow-sm h-100")
             ], width=12, lg=6, className="mb-4"),
-            
-            # Area Chart Column
+            # Area Chart 
             dbc.Col([
                 dbc.Card([
                     dbc.CardHeader([
@@ -290,7 +288,7 @@ layout = html.Div([
     ], className="mt-4", fluid=True)
 ], className="bg-light min-vh-100 py-4")
 
-# Callback to control year dropdown visibility
+# Callback to control dropdown visibility
 @callback(
     Output("year-filter-container", "className"),
     Input("time-filter-radio", "value")
@@ -332,7 +330,7 @@ def update_chart_title(time_filter, selected_year):
      Output("stands-sold-yoy", "children"),
      Output("deposit-yoy", "children"),
      Output("installment-yoy", "children"),
-     Output("report-data-store", "children")],  # Store as JSON string
+     Output("report-data-store", "children")],  # Stored as JSON string
     [Input("refresh-dashboard-button", "n_clicks"),
      Input("time-filter-radio", "value"),
      Input("year-dropdown", "value")],
@@ -390,7 +388,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             date_condition = f"YEAR(registration_date) = {selected_year}"
             transaction_date_condition = f"YEAR(transaction_date) = {selected_year}"
         
-        # Query 1: Total Stand Value
+        #Total Stand Value
         try:
             total_stand_value_query = f"""
             SELECT SUM(sale_value) AS total_sale_value
@@ -404,7 +402,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             current_stand_value = 0
         formatted_stand_value = f"${current_stand_value:,.2f}" if current_stand_value else "$0"
         
-        # Query 2: Number of Stands Sold
+        #Number of Stands Sold
         try:
             stands_sold_query = f"""
             SELECT COUNT(stand_number) AS total_stands_sold
@@ -418,7 +416,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             current_stands_sold = 0
         formatted_stands_sold = str(current_stands_sold) if current_stands_sold else "0"
         
-        # Query 3: Total Deposit
+        #Total Deposit
         try:
             total_deposit_query = f"""
             SELECT SUM(deposit_amount) AS total_deposit
@@ -432,7 +430,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             current_deposit = 0
         formatted_deposit = f"${current_deposit:,.2f}" if current_deposit else "$0"
         
-        # Query 4: Total Installment
+        #Total Installment
         try:
             total_installment_query = f"""
             SELECT SUM(amount) AS total_installment
@@ -553,7 +551,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             ], className="text-muted small")
             stand_value_yoy = stands_sold_yoy = deposit_yoy = installment_yoy = default_yoy
         
-        # Pie Chart: Deposits vs Installments
+        #Deposits vs Installments
         pie_data = [current_deposit, current_installment]
         pie_labels = ["Deposits", "Installments"]
         pie_colors = ["#28a745", '#ffc107']
@@ -582,10 +580,10 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 margin=dict(l=20, r=20, t=50, b=20)
             )
         
-        # Area Chart: Stands Sold Trend
+        # Stands Sold Trend(area graph)
         try:
             if time_filter == "yearly" or time_filter == "forecast":
-                # Show trend for the selected year (monthly breakdown)
+                # trend for the selected year (monthly breakdown)
                 trend_query = f"""
                 SELECT 
                     MONTH(registration_date) AS month,
@@ -597,16 +595,16 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 """
                 trend_df = pd.read_sql(trend_query, engine)
                 
-                # Create complete month series
+                #complete month series
                 all_months = pd.DataFrame({'month': range(1, 13)})
                 trend_df = all_months.merge(trend_df, on='month', how='left').fillna(0)
                 
                 if time_filter == "forecast" and ML_AVAILABLE and not trend_df.empty:
-                    # Create forecast data
+                    #forecast data
                     forecast_df = create_forecast(trend_df, months_ahead=3)
                     
                     if not forecast_df.empty and len(forecast_df[forecast_df['type'] == 'forecast']) > 0:
-                        # Plot actual and forecast data
+                        # Plotting actual and forecast data
                         area_fig = go.Figure()
                         
                         # Actual data
@@ -638,7 +636,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                                 marker=dict(size=6, symbol='diamond')
                             ))
                             
-                            # Add confidence interval (simplified)
+                            #confidence interval (simplified)
                             upper_bound = [y * 1.1 for y in forecast_y]
                             lower_bound = [max(0, y * 0.9) for y in forecast_y]
                             area_fig.add_trace(go.Scatter(

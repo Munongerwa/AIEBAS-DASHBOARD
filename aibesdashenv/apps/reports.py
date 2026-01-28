@@ -17,7 +17,7 @@ import pandas as pd
 class ReportGenerator:
     def __init__(self, db_connection_string=None):
         self.db_connection_string = db_connection_string
-        self.reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_reprts")
+        self.reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_reports")
         self.ensure_reports_directory()
         
     def ensure_reports_directory(self):
@@ -26,15 +26,14 @@ class ReportGenerator:
             os.makedirs(self.reports_dir)
     
     def get_weekly_data(self, year, week_number):
-        """Fetch data for the specified week"""
+        """Fetch data for the specified week grouped by project_id"""
         if not self.db_connection_string:
             return {}
             
         try:
             engine = create_engine(self.db_connection_string)
             
-            # Calculate date range for the week
-            # Find Monday of the specified week
+            # Calculation of the date range for the week
             jan_1 = datetime(year, 1, 1)
             days_to_monday = (7 - jan_1.weekday()) % 7
             week_start = jan_1 + timedelta(days=days_to_monday + (week_number - 2) * 7)
@@ -43,25 +42,32 @@ class ReportGenerator:
             date_condition = f"DATE(registration_date) BETWEEN '{week_start.strftime('%Y-%m-%d')}' AND '{week_end.strftime('%Y-%m-%d')}'"
             transaction_date_condition = f"DATE(transaction_date) BETWEEN '{week_start.strftime('%Y-%m-%d')}' AND '{week_end.strftime('%Y-%m-%d')}'"
             
-            # Total Stand Value
-            total_stand_value_query = f"""
-            SELECT SUM(sale_value) AS total_sale_value
+            # Get project-based data using project_id only
+            project_data_query = f"""
+            SELECT 
+                project_id,
+                COUNT(stand_number) AS stands_sold,
+                SUM(sale_value) AS stands_value,
+                COUNT(CASE WHEN available = 0 THEN stand_number END) AS stands_available
+            FROM Stands
+            WHERE {date_condition}
+            GROUP BY project_id
+            ORDER BY stands_sold DESC
+            """
+            project_df = pd.read_sql(project_data_query, engine)
+            
+            # Get overall summary
+            summary_query = f"""
+            SELECT 
+                COUNT(stand_number) AS total_stands_sold,
+                SUM(sale_value) AS total_stand_value,
+                COUNT(CASE WHEN available = 0 THEN stand_number END) AS total_stands_available
             FROM Stands
             WHERE {date_condition}
             """
-            stand_value_df = pd.read_sql(total_stand_value_query, engine)
-            total_stand_value = stand_value_df.iloc[0]['total_sale_value'] if not stand_value_df.empty and not pd.isna(stand_value_df.iloc[0]['total_sale_value']) else 0
+            summary_df = pd.read_sql(summary_query, engine)
             
-            #Number of Stands Sold
-            stands_sold_query = f"""
-            SELECT COUNT(stand_number) AS total_stands_sold
-            FROM Stands
-            WHERE {date_condition}
-            """
-            stands_sold_df = pd.read_sql(stands_sold_query, engine)
-            total_stands_sold = stands_sold_df.iloc[0]['total_stands_sold'] if not stands_sold_df.empty and not pd.isna(stands_sold_df.iloc[0]['total_stands_sold']) else 0
-            
-            #Total Deposit
+            # Total Deposit
             total_deposit_query = f"""
             SELECT SUM(deposit_amount) AS total_deposit
             FROM customer_accounts
@@ -70,7 +76,7 @@ class ReportGenerator:
             deposit_df = pd.read_sql(total_deposit_query, engine)
             total_deposit = deposit_df.iloc[0]['total_deposit'] if not deposit_df.empty and not pd.isna(deposit_df.iloc[0]['total_deposit']) else 0
             
-            #Total Installment
+            # Total Installment
             total_installment_query = f"""
             SELECT SUM(amount) AS total_installment
             FROM customer_account_invoices
@@ -82,10 +88,14 @@ class ReportGenerator:
             engine.dispose()
             
             return {
-                'total_stand_value': total_stand_value,
-                'total_stands_sold': total_stands_sold,
-                'total_deposit': total_deposit,
-                'total_installment': total_installment,
+                'project_data': project_df,
+                'summary': {
+                    'total_stand_value': summary_df.iloc[0]['total_stand_value'] if not summary_df.empty and not pd.isna(summary_df.iloc[0]['total_stand_value']) else 0,
+                    'total_stands_sold': summary_df.iloc[0]['total_stands_sold'] if not summary_df.empty and not pd.isna(summary_df.iloc[0]['total_stands_sold']) else 0,
+                    'total_stands_available': summary_df.iloc[0]['total_stands_available'] if not summary_df.empty and not pd.isna(summary_df.iloc[0]['total_stands_available']) else 0,
+                    'total_deposit': total_deposit,
+                    'total_installment': total_installment
+                },
                 'week_start': week_start,
                 'week_end': week_end,
                 'week_number': week_number,
@@ -95,51 +105,64 @@ class ReportGenerator:
             print(f"Error fetching weekly data: {e}")
             return {}
     
-    def create_weekly_trend_chart(self, year, week_number):
-        """Create a trend chart for the past 4 weeks"""
+    def create_daily_trend_chart(self, year, week_number):
+        """Create a trend chart showing daily sales for the week"""
         try:
             if not self.db_connection_string:
                 return None
                 
             engine = create_engine(self.db_connection_string)
             
-            # last 4 weeks
-            weeks_data = []
-            for i in range(4, 0, -1):
-                target_week = week_number - i + 1
-                if target_week < 1:
-                    target_year = year - 1
-                    # Approximate week calculation for previous year
-                    target_week = 52 + target_week
-                else:
-                    target_year = year
-                    
-                week_data = self.get_weekly_data(target_year, target_week)
-                if week_data:
-                    weeks_data.append({
-                        'week': f"Wk {target_week}",
-                        'stands_sold': week_data['total_stands_sold']
-                    })
+            # Calculate date range for the week
+            jan_1 = datetime(year, 1, 1)
+            days_to_monday = (7 - jan_1.weekday()) % 7
+            week_start = jan_1 + timedelta(days=days_to_monday + (week_number - 2) * 7)
+            week_end = week_start + timedelta(days=6)
             
-            if not weeks_data:
+            date_condition = f"DATE(registration_date) BETWEEN '{week_start.strftime('%Y-%m-%d')}' AND '{week_end.strftime('%Y-%m-%d')}'"
+            
+            # Get daily data for the week
+            daily_query = f"""
+            SELECT 
+                DATE(registration_date) as sale_date,
+                COUNT(stand_number) AS stands_sold
+            FROM Stands
+            WHERE {date_condition}
+            GROUP BY DATE(registration_date)
+            ORDER BY sale_date
+            """
+            daily_df = pd.read_sql(daily_query, engine)
+            
+            engine.dispose()
+            
+            if daily_df.empty:
                 return None
             
-            #matplotlib chart
-            fig, ax = plt.subplots(figsize=(8, 4))
-            weeks = [d['week'] for d in weeks_data]
-            values = [d['stands_sold'] for d in weeks_data]
+            # Create daily trend chart
+            fig, ax = plt.subplots(figsize=(10, 5))
             
-            ax.plot(weeks, values, marker='o', linewidth=2, markersize=6, color='#007bff')
-            ax.set_title('Stands Sold - Last 4 Weeks', fontsize=14, pad=20)
-            ax.set_xlabel('Week', fontsize=12)
+            # Convert dates to readable format
+            daily_df['sale_date'] = pd.to_datetime(daily_df['sale_date'])
+            daily_df['date_label'] = daily_df['sale_date'].dt.strftime('%a\n%m/%d')
+            
+            ax.bar(daily_df['date_label'], daily_df['stands_sold'], 
+                   color='#007bff', alpha=0.7, edgecolor='#0056b3')
+            
+            ax.set_title('Daily Stands Sold - This Week', fontsize=14, pad=20)
+            ax.set_xlabel('Day of Week', fontsize=12)
             ax.set_ylabel('Stands Sold', fontsize=12)
-            ax.grid(True, alpha=0.3)
+            ax.grid(True, alpha=0.3, axis='y')
             
-            # Improvement of styling
+            # Add value labels on bars
+            for i, v in enumerate(daily_df['stands_sold']):
+                ax.text(i, v + 0.5, str(v), ha='center', va='bottom', fontweight='bold')
+            
+            # Improve styling
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
+            ax.set_ylim(0, daily_df['stands_sold'].max() * 1.2)
             
-            # Saving to bytes
+            # Save to bytes
             img_buffer = io.BytesIO()
             plt.savefig(img_buffer, format='png', bbox_inches='tight', dpi=300, facecolor='white')
             img_buffer.seek(0)
@@ -147,11 +170,11 @@ class ReportGenerator:
             
             return img_buffer
         except Exception as e:
-            print(f"Error creating trend chart: {e}")
+            print(f"Error creating daily trend chart: {e}")
             return None
     
     def generate_pdf_report(self, year, week_number):
-        """Generate PDF report for the specified week"""
+        """Generate PDF report for the specified week with project grouping"""
         try:
             # weekly data
             data = self.get_weekly_data(year, week_number)
@@ -173,8 +196,8 @@ class ReportGenerator:
                 parent=styles['Heading1'],
                 fontSize=24,
                 spaceAfter=30,
-                alignment=1,  # Center align
-                textColor=colors.HexColor("#007bff")
+                alignment=1, 
+                textColor=colors.HexColor("#052191")
             )
             
             subtitle_style = ParagraphStyle(
@@ -182,10 +205,10 @@ class ReportGenerator:
                 parent=styles['Heading2'],
                 fontSize=16,
                 spaceAfter=20,
-                textColor=colors.HexColor("#6c757d")
+                textColor=colors.HexColor("#ac147e")
             )
             
-            story.append(Paragraph("Weekly Sales Report", title_style))
+            story.append(Paragraph("AIBES Weekly Sales Report", title_style))
             story.append(Spacer(1, 20))
             
             # Report metadata
@@ -195,17 +218,19 @@ class ReportGenerator:
             story.append(Paragraph(f"<b>Generated on:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", meta_style))
             story.append(Spacer(1, 30))
             
-            # Summary table
-            data_table = [
+            # Overall Summary table
+            summary_data = data['summary']
+            summary_table_data = [
                 ['Metric', 'Value'],
-                ['Total Stand Value', f"${data['total_stand_value']:,.2f}"],
-                ['Stands Sold', str(data['total_stands_sold'])],
-                ['Total Deposit', f"${data['total_deposit']:,.2f}"],
-                ['Total Installment', f"${data['total_installment']:,.2f}"]
+                ['Total Stand Value', f"${summary_data['total_stand_value']:,.2f}"],
+                ['Total Stands Sold', str(summary_data['total_stands_sold'])],
+                ['Total Stands Available', str(summary_data['total_stands_available'])],
+                ['Total Deposit', f"${summary_data['total_deposit']:,.2f}"],
+                ['Total Installment', f"${summary_data['total_installment']:,.2f}"]
             ]
             
-            table = Table(data_table, colWidths=[3*inch, 2*inch])
-            table.setStyle(TableStyle([
+            summary_table = Table(summary_table_data, colWidths=[3*inch, 2*inch])
+            summary_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007bff")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -219,38 +244,94 @@ class ReportGenerator:
             ]))
             
             story.append(Paragraph("Weekly Summary", subtitle_style))
-            story.append(table)
+            story.append(summary_table)
             story.append(Spacer(1, 30))
             
-            # Trend chart
-            chart_img = self.create_weekly_trend_chart(year, week_number)
+            # Project-wise Analysis table
+            if not data['project_data'].empty:
+                story.append(Paragraph("Project-wise Analysis", subtitle_style))
+                
+                # Prepare project table data
+                project_table_data = [['Project ID', 'Stands Sold', 'Value ($)', 'Stands Available']]
+                
+                for _, row in data['project_data'].iterrows():
+                    project_table_data.append([
+                        str(int(row['project_id'])) if pd.notna(row['project_id']) else 'N/A',
+                        str(int(row['stands_sold'])) if pd.notna(row['stands_sold']) else '0',
+                        f"${row['stands_value']:,.2f}" if pd.notna(row['stands_value']) else '$0.00',
+                        str(int(row['stands_available'])) if pd.notna(row['stands_available']) else '0'
+                    ])
+                
+                # Add totals row
+                if len(data['project_data']) > 1:
+                    total_stands_sold = data['project_data']['stands_sold'].sum()
+                    total_value = data['project_data']['stands_value'].sum()
+                    total_available = data['project_data']['stands_available'].sum()
+                    
+                    project_table_data.append([
+                        'TOTAL', 
+                        str(int(total_stands_sold)),
+                        f"${total_value:,.2f}",
+                        str(int(total_available))
+                    ])
+                
+                project_table = Table(project_table_data, colWidths=[1.5*inch, 1.5*inch, 2*inch, 2*inch])
+                
+                # Define base table styles
+                project_table_styles = [
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#28a745")),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 11),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -2), 10),
+                ]
+
+                # Conditionally add bold/colored footer only if multiple rows exist
+                if len(data['project_data']) > 1:
+                    project_table_styles.extend([
+                        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#e9ecef"))
+                    ])
+
+                project_table.setStyle(TableStyle(project_table_styles))
+                
+                story.append(project_table)
+                story.append(Spacer(1, 30))
+            
+            # Daily trend chart
+            chart_img = self.create_daily_trend_chart(year, week_number)
             if chart_img:
-                story.append(Paragraph("Trend Analysis - Last 4 Weeks", subtitle_style))
+                story.append(Paragraph("Daily Trend Analysis - This Week", subtitle_style))
                 story.append(Spacer(1, 12))
                 
-                # Add chart image
+                # chart image
                 img_buffer = io.BytesIO(chart_img.getvalue())
-                story.append(Image(img_buffer, width=6*inch, height=3*inch))
+                story.append(Image(img_buffer, width=7*inch, height=3.5*inch))
             
-            # Build PDF
+            # code for building the PDF
             doc.build(story)
             
-            # Store report info in database
-            self.store_report_info(filename, year, week_number, data)
+            # report info in database storing
+            self.store_report_info(filename, year, week_number, summary_data)
             
             return filepath
         except Exception as e:
             print(f"Error generating PDF report: {e}")
             return None
     
-    def store_report_info(self, filename, year, week_number, data):
+    def store_report_info(self, filename, year, week_number, summary_data):
         """Store report information in SQLite database"""
         try:
             db_path = os.path.join(self.reports_dir, "reports.db")
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             
-            # Create table if not exists
+            # Creating table if not exists
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS reports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -259,21 +340,23 @@ class ReportGenerator:
                     week_number INTEGER,
                     generated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     total_stand_value REAL,
-                    total_stands_sold REAL,
+                    total_stands_sold INTEGER,
+                    total_stands_available INTEGER,
                     total_deposit REAL,
                     total_installment REAL
                 )
             ''')
             
-            # Insert report info
+            # Inserting the report information
             cursor.execute('''
                 INSERT OR REPLACE INTO reports 
-                (filename, year, week_number, total_stand_value, total_stands_sold, total_deposit, total_installment)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (filename, year, week_number, total_stand_value, total_stands_sold, total_stands_available, total_deposit, total_installment)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 filename, year, week_number,
-                data['total_stand_value'], data['total_stands_sold'],
-                data['total_deposit'], data['total_installment']
+                summary_data['total_stand_value'], summary_data['total_stands_sold'],
+                summary_data['total_stands_available'], summary_data['total_deposit'], 
+                summary_data['total_installment']
             ))
             
             conn.commit()
@@ -292,10 +375,10 @@ class ReportGenerator:
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT filename, year, week_number, generated_date, total_stand_value, total_stands_sold
+                SELECT filename, year, week_number, generated_date, total_stand_value, total_stands_sold, total_stands_available
                 FROM reports
                 ORDER BY generated_date DESC
-                LIMIT 50
+                LIMIT 60
             ''')
             
             reports = cursor.fetchall()
@@ -307,7 +390,8 @@ class ReportGenerator:
                 'week': r[2], 
                 'date': r[3],
                 'total_stand_value': r[4],
-                'total_stands_sold': r[5]
+                'total_stands_sold': r[5],
+                'total_stands_available': r[6]
             } for r in reports]
         except Exception as e:
             print(f"Error fetching reports: {e}")
