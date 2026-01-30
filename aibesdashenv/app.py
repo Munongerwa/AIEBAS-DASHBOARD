@@ -6,23 +6,12 @@ from flask import session
 from sqlalchemy import create_engine
 import datetime
 import uuid
+import sqlite3
 import os
-
-# Import your pages
-from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis, reports_view
-
-# app.py
-import dash
-from dash import dcc, html, callback, Input, Output
-import dash_bootstrap_components as dbc
+from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis, reports_view, settings
 from flask import session, send_from_directory
-from sqlalchemy import create_engine
-import datetime
-import uuid
-import os
-
-# Import your pages
-from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis, reports_view
+from apps.settings import layout, get_settings_manager, initialize_settings_manager
+from flask import send_from_directory
 
 # Initialize the Dash app with suppress_callback_exceptions=True
 app = dash.Dash(__name__, 
@@ -44,6 +33,12 @@ def serve_report(filename):
         os.makedirs(reports_dir)
     return send_from_directory(reports_dir, filename)
 
+@app.server.route('/serve-logo/<path:filename>')
+def serve_logo(filename):
+    logos_dir = os.path.join(os.path.dirname(__file__), "logos")
+    if not os.path.exists(logos_dir):
+        os.makedirs(logos_dir)
+    return send_from_directory(logos_dir, filename)
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
@@ -81,7 +76,7 @@ app.layout = html.Div([
         ]),
         color="dark",
         dark=True,
-        className="mb-4"
+        className="mb-20"
     ),
 
     # Page content
@@ -192,6 +187,9 @@ def display_page(pathname):
         return [sales_analysis.layout, connection_status]
     elif pathname == '/apps/reports_view':
         return [reports_view.layout, connection_status]
+    elif pathname == '/apps/settings':
+        return [settings.layout, connection_status]
+
 
     else:
         not_found = dbc.Container([
@@ -201,6 +199,7 @@ def display_page(pathname):
         ], className="text-center mt-5")
         return [not_found, connection_status]
 
+settings_manager = initialize_settings_manager()
 # Callback for navbar toggle
 @app.callback(
     Output("navbar-collapse", "is_open"),
@@ -211,7 +210,43 @@ def toggle_navbar_collapse(n):
     if n:
         return not False  
     return False
+# Add this to your app.py startup
+def initialize_email_settings():
+    """Initialize email settings in database"""
+    try:
+        settings_db_path = os.path.join(os.path.dirname(__file__), "settings.db")
+        conn = sqlite3.connect(settings_db_path)
+        cursor = conn.cursor()
+        
+        # Create email settings table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS email_settings (
+                id INTEGER PRIMARY KEY,
+                smtp_server TEXT,
+                smtp_port INTEGER,
+                email_username TEXT,
+                email_password TEXT,
+                sender_email TEXT,
+                sender_name TEXT,
+                updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Insert default email settings if none exist
+        cursor.execute("SELECT COUNT(*) FROM email_settings")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('''
+                INSERT INTO email_settings (id, smtp_server, smtp_port) 
+                VALUES (1, 'smtp.gmail.com', 587)
+            ''')
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing email settings: {e}")
 
+# Call this function during app initialization
+initialize_email_settings()
 # Function to get user-specific database connection
 def get_user_db_connection():
     if 'db_connection_string' in session and session['db_connection_string']:
@@ -222,7 +257,59 @@ def get_user_db_connection():
             print(f"Database connection error: {e}")
             return None
     return None
-
+def initialize_database_tables():
+    """Initialize all required database tables"""
+    try:
+        settings_db_path = os.path.join(os.path.dirname(__file__), "settings.db")
+        conn = sqlite3.connect(settings_db_path)
+        cursor = conn.cursor()
+        
+        # Create company settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS company_settings (
+                id INTEGER PRIMARY KEY,
+                company_name TEXT,
+                logo_path TEXT,
+                logo_data BLOB,
+                updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create email settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS email_settings (
+                id INTEGER PRIMARY KEY,
+                smtp_server TEXT,
+                smtp_port INTEGER,
+                email_username TEXT,
+                email_password TEXT,
+                sender_email TEXT,
+                sender_name TEXT,
+                updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Insert default company settings if none exist
+        cursor.execute("SELECT COUNT(*) FROM company_settings")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('''
+                INSERT INTO company_settings (id, company_name) 
+                VALUES (1, 'AIBES Real Estate')
+            ''')
+        
+        # Insert default email settings if none exist
+        cursor.execute("SELECT COUNT(*) FROM email_settings")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('''
+                INSERT INTO email_settings (id, smtp_server, smtp_port) 
+                VALUES (1, 'smtp.gmail.com', 587)
+            ''')
+        
+        conn.commit()
+        conn.close()
+        print("Database tables initialized successfully")
+    except Exception as e:
+        print(f"Error initializing database tables: {e}")
 # Function to get connection status component for navbar
 def get_connection_status_component():
     if 'db_connection_string' in session and session['db_connection_string']:
@@ -256,4 +343,5 @@ def get_connection_status_component():
         ], className="d-flex align-items-center")
 
 if __name__ == '__main__':
+    initialize_database_tables()
     app.run(debug=True)

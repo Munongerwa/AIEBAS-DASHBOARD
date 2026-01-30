@@ -1,5 +1,5 @@
 .navbar {
-        position: relative;
+        position: fixed;
     top: 0;
     left: 0;
     right: 0;
@@ -9,7 +9,7 @@
     z-index: 1050;
     display: flex;
     align-items: center;
-    padding: 0 1rem;
+    padding: 0 5rem;
 }
 .navbar .logo {
     display: flex;
@@ -38,7 +38,7 @@
     }
 }
 .content {
-    margin-top: 60px;
+    margin-top: 0px;
   
     margin-left: 1rem;
     margin-right: 1rem;
@@ -60,4 +60,65 @@
 .db-connection-content {
     position: relative;
     z-index: 1;
+}
+.modern-filter-card {
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.modern-radio-group .form-check {
+    margin-right: 20px;
+    margin-bottom: 8px;
+}
+
+.modern-radio-group .form-check-input {
+    transform: scale(1.2);
+    margin-right: 19px;
+}
+
+.modern-radio-group .form-check-label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.modern-dropdown .Select-control {
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    min-height: 38px;
+}
+
+.modern-dropdown .Select-control:hover {
+    border-color: #007bff;
+}
+
+.modern-btn {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 6px 12px;
+    transition: all 0.2s ease;
+}
+
+.modern-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.modern-btn:active {
+    transform: translateY(0);
+}
+
+@media (max-width: 992px) {
+    .modern-filter-card .card-body {
+        padding: 1.25rem;
+    }
+
+    .modern-btn {
+        margin-bottom: 8px;
+        width: auto;
+    }
+
+    .d-flex.flex-wrap.justify-content-end {
+        justify-content: center !important;
+    }
 }

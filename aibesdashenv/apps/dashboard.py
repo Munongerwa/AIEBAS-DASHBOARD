@@ -118,74 +118,78 @@ layout = html.Div([
     #Connection status indicator
     html.Div(id="dashboard-connection-status"),
     
-    # Filters Section
+    # Modern Filters Section
     dbc.Container([
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader([
-                        html.I(className="fas fa-filter me-2"),
-                        "Dashboard Filters"
-                    ], className="fw-bold"),
-                    dbc.CardBody([
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Label([
-                                    html.I(className="fas fa-clock me-1"),
-                                    "Time Range"
-                                ], className="mb-1"),
-                                dcc.RadioItems(
-                                    id="time-filter-radio",
-                                    options=[
-                                        {"label": "Today", "value": "daily"},
-                                        {"label": "Last 7 Days", "value": "weekly"},
-                                        {"label": "This Year", "value": "yearly"}
-                                    ] + ([{"label": "Forecast", "value": "forecast"}] if ML_AVAILABLE else []),
-                                    value="yearly",
-                                    inline=True,
-                                    className="mb-3"
-                                ),
-                                html.Div([
-                                    dbc.Label([
-                                        html.I(className="fas fa-calendar-alt me-1"),
-                                        "Select Year"
-                                    ], className="mb-1"),
-                                    dcc.Dropdown(
-                                        id="year-dropdown",
-                                        options=[
-                                            {'label': str(year), 'value': year} 
-                                            for year in range(datetime.datetime.now().year, datetime.datetime.now().year - 5, -1)
-                                        ],
-                                        value=datetime.datetime.now().year,
-                                        clearable=False,
-                                        className="mb-3"
-                                    )
-                                ], id="year-filter-container")
-                            ], width=12)
-                        ]),
-                        
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Button([
-                                    html.I(className="fas fa-sync me-2"),
-                                    "Refresh Dashboard"
-                                ], id="refresh-dashboard-button", color="primary", className="me-2 mb-2"),
-                                dbc.Button([
-                                    html.I(className="fas fa-download me-2"),
-                                    "Download Report"
-                                ], id="download-report-button", color="success", className="me-2 mb-2"),
-                                dbc.Button([
-                                    html.I(className="fas fa-file-pdf me-2"),
-                                    "Generate Weekly PDF"
-                                ], id="generate-weekly-report", color="info", className="mb-2"),
-                                html.Div(id="manual-report-status", className="mt-2")
-                            ], width=12)
-                        ]),
-                        dcc.Download(id="download-report")
-                    ])
-                ], className="shadow-sm")
-            ], width=12, lg=4)
-        ], className="mb-4"),
+        dbc.Card([
+            dbc.CardBody([
+                dbc.Row([
+                    # Time Range Filter
+                    dbc.Col([
+                        html.Div([
+                            html.Small([
+                                html.I(className="fas fa-clock me-1"),
+                                "Time Range"
+                            ], className="text-muted mb-1 d-block"),
+                            dcc.RadioItems(
+                                id="time-filter-radio",
+                                options=[
+                                    {"label": "Today", "value": "daily"},
+                                    {"label": "Last 7 Days", "value": "weekly"},
+                                    {"label": "This Year", "value": "yearly"}
+                                ] + ([{"label": "Forecast", "value": "forecast"}] if ML_AVAILABLE else []),
+                                value="yearly",
+                                inline=True,
+                                className="modern-radio-group"
+                            )
+                        ], className="mb-3")
+                    ], width=12, lg=6),
+                    
+                    # Year Filter (conditionally shown)
+                    dbc.Col([
+                        html.Div([
+                            html.Small([
+                                html.I(className="fas fa-calendar-alt me-1"),
+                                "Select Year"
+                            ], className="text-muted mb-1 d-block"),
+                            dcc.Dropdown(
+                                id="year-dropdown",
+                                options=[
+                                    {'label': str(year), 'value': year} 
+                                    for year in range(datetime.datetime.now().year, datetime.datetime.now().year - 5, -1)
+                                ],
+                                value=datetime.datetime.now().year,
+                                clearable=False,
+                                className="modern-dropdown"
+                            )
+                        ], id="year-filter-container", className="mb-3")
+                    ], width=12, lg=3),
+                    
+                    # Action Buttons
+                    dbc.Col([
+                        html.Div([
+                            dbc.Button([
+                                html.I(className="fas fa-sync me-2"),
+                                "Refresh"
+                            ], id="refresh-dashboard-button", color="primary", size="sm", className="me-2 mb-2 modern-btn"),
+                            dbc.Button([
+                                html.I(className="fas fa-download me-2"),
+                                "Download"
+                            ], id="download-report-button", color="success", size="sm", className="me-2 mb-2 modern-btn"),
+                            dbc.Button([
+                                html.I(className="fas fa-file-pdf me-2"),
+                                "PDF Report"
+                            ], id="generate-weekly-report", color="info", size="sm", className="mb-2 modern-btn")
+                        ], className="d-flex flex-wrap justify-content-end")
+                    ], width=12, lg=3)
+                ])
+            ])
+        ], className="shadow-sm mb-4 modern-filter-card"),
+        
+        # Manual Report Status
+        html.Div(id="manual-report-status", className="mb-3"),
+        
+        # Download Component
+        dcc.Download(id="download-report"),
         
         # Metrics Cards Row
         dbc.Row([
@@ -294,9 +298,10 @@ layout = html.Div([
     Input("time-filter-radio", "value")
 )
 def toggle_year_filter(time_filter):
+    base_classes = "mb-3"
     if time_filter in ["yearly", "forecast"]:
-        return ""
-    return "d-none"
+        return base_classes
+    return "d-none " + base_classes
 
 # Callback to update chart title
 @callback(

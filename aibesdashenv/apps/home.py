@@ -17,7 +17,7 @@ layout = html.Div(
         'marginTop': '0px'
     },
     children=[
-        html.Img(src='/assets/aibes.png', style={'width': '210px', 'marginBottom': '20px',  'marginTop': '10px'}),
+        html.Img(src='/assets/aibes.png', style={'width': '210px', 'marginBottom': '20px',  'marginTop': '0px'}),
         html.H1("Welcome to Aibes Analysis", style={'fontSize': '4rem', 'marginTop': '0px'}),
         html.P("Your one-stop solution for Aibes Data Insights.", style={'fontSize': '1.8rem', 'margin': '15px 0'}),
         
