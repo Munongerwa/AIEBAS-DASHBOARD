@@ -232,7 +232,7 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
         stands_df = pd.read_sql(total_stands_query, engine)
         total_stands = stands_df.iloc[0]['total_stands'] if not stands_df.empty and stands_df.iloc[0]['total_stands'] else 0
         
-        # Average Sale Value
+        # Average sale value
         avg_sale_query = f"""
         SELECT AVG(s.sale_value) AS avg_sale 
         FROM Stands s

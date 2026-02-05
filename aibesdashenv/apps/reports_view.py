@@ -8,10 +8,10 @@ import datetime
 import dash
 from dateutil.relativedelta import relativedelta
 
-# Layout - Make sure this is defined at the module level
+
 layout = html.Div([
     dbc.Container([
-        # Report Generation Section
+        # Report generation layout 
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -80,7 +80,7 @@ layout = html.Div([
         # Status messages
         html.Div(id="generate-report-status", className="mb-3"),
         
-        # Filter Section
+        #Filter area
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -138,7 +138,7 @@ layout = html.Div([
             ], width=12)
         ]),
         
-        # Delete Confirmation Modal
+        # Deleting report confirmation Modal
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle([
                 html.I(className="fas fa-trash-alt me-2"),
@@ -157,7 +157,7 @@ layout = html.Div([
             ])
         ], id="delete-modal", centered=True),
         
-        # Preview modal - simplified without download/email buttons
+        # Preview modal
         dbc.Modal([
             dbc.ModalHeader(dbc.ModalTitle([
                 html.I(className="fas fa-file-pdf me-2"),
@@ -179,7 +179,7 @@ layout = html.Div([
         html.Div(id="current-delete-filename", style={"display": "none"}),
         html.Div(id="current-preview-filename", style={"display": "none"}),
         
-        # Reports List Section
+        # Reports list section
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -203,7 +203,7 @@ def generate_reports_table(reports, search_term="", report_type_filter="all",
     if not reports:
         return dbc.Alert("No reports found.", color="info")
     
-    # Apply filters
+    # filters application
     filtered_reports = []
     for report in reports:
         try:
@@ -225,7 +225,7 @@ def generate_reports_table(reports, search_term="", report_type_filter="all",
             
             # Date range filter
             if start_date and end_date:
-                # Check if report falls within the selected date range
+                #validating the start date vs the end date
                 if not (start_date <= generated_date.date() <= end_date):
                     continue
             
@@ -240,7 +240,7 @@ def generate_reports_table(reports, search_term="", report_type_filter="all",
             "No reports match the current filters."
         ], color="info")
     
-    # Sort by generated date (newest first)
+    # organizing reports by generated date (latest first)
     sorted_reports = sorted(filtered_reports, 
                            key=lambda x: datetime.datetime.strptime(x['date'], '%Y-%m-%d %H:%M:%S'),
                            reverse=True)

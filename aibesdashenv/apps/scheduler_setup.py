@@ -1,4 +1,3 @@
-# scheduler_setup.py
 from apscheduler.schedulers.background import BackgroundScheduler
 from apps.reports import get_report_generator
 import datetime
@@ -31,7 +30,7 @@ def generate_weekly_report_job():
 def start_scheduler():
     """Start the background scheduler"""
     scheduler = BackgroundScheduler()
-    # Run every Monday at 2 AM
+    # Run every monday at 2am
     scheduler.add_job(
         func=generate_weekly_report_job,
         trigger="cron",

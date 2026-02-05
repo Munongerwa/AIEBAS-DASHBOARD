@@ -328,7 +328,7 @@ def update_land_bank_analysis(n_clicks, time_level, selected_year, selected_mont
         return [not_connected_alert, "0 stands", "0 stands", "0 stands", "0 stands", "0 stands", empty_fig, empty_fig]
     
     try:
-        # Build date condition based on time level
+        # creating date condition based on time level
         if time_level == "year":
             date_condition = f"YEAR(s.registration_date) = {selected_year}"
             period_label = f"Year {selected_year}"
@@ -412,7 +412,7 @@ def update_land_bank_analysis(n_clicks, time_level, selected_year, selected_mont
         residential_stands = residential_df.iloc[0]['residential_stands'] if not residential_df.empty and residential_df.iloc[0]['residential_stands'] else 0
         formatted_residential_stands = f"{residential_stands:,.0f} stands" if residential_stands else "0 stands"
 
-        # Land distribution by status.... pie chart - WITH FILTERS APPLIED
+        # Land distribution by status
         status_query = f"""
         SELECT s.available, COUNT(s.stand_number) AS count 
         FROM Stands s
@@ -447,7 +447,7 @@ def update_land_bank_analysis(n_clicks, time_level, selected_year, selected_mont
             pie_fig = go.Figure()
             pie_fig.update_layout(title="No Data Available")
         
-        # Project comparison chart - COMPARE ALL PROJECTS
+        # Project comparison chart
         project_query = f"""
         SELECT 
             p.name AS project_name,
@@ -464,10 +464,10 @@ def update_land_bank_analysis(n_clicks, time_level, selected_year, selected_mont
         project_df = pd.read_sql(project_query, engine)
         
         if not project_df.empty:
-            # Create combined labels with project name and ID
+            # combined labels with project name and ID
             project_labels = [f"{row['project_name']} (ID: {row['project_id']})" for _, row in project_df.iterrows()]
             
-            # Create grouped bar chart showing available vs sold stands for all projects
+            # bar chart showing available vs sold stands for all projects
             bar_fig = go.Figure()
             
             bar_fig.add_trace(go.Bar(

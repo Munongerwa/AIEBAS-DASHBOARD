@@ -165,7 +165,7 @@ app.layout = html.Div([
 @app.callback(Output('session-id', 'data'),
               Input('url', 'pathname'))
 def initialize_session(pathname):
-    # Initialize session for each user
+    # Initializing session for each user
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
         session['db_connection_string'] = None
@@ -213,10 +213,10 @@ def display_page(pathname, logout_clicks):
     
     # Handle logout
     if ctx.triggered and ctx.triggered[0]['prop_id'] == 'confirm-logout-btn.n_clicks':
-        # Clear user session
+        # Clearing user session
         session.pop('db_connection_string', None)
         session.pop('user_id', None)
-        # Show logout success page
+        # logout success page
         logout_success_page = html.Div([
             dbc.Container([
                 dbc.Alert([
@@ -242,9 +242,9 @@ def display_page(pathname, logout_clicks):
         return [logout_success_page, get_connection_status_component()] 
     # Connection status for navbar
     connection_status = get_connection_status_component()
-    # Handle logout page directly
+    # Handling logout page directly
     if pathname == '/apps/logout':
-        # Clear user session
+        # Clearing user session
         session.pop('db_connection_string', None)
         session.pop('user_id', None)
         return [html.Div([
@@ -287,7 +287,7 @@ def display_page(pathname, logout_clicks):
             ])
             return [error_page, connection_status]
     
-    # Check if already connected
+    # Checking whether user is already connected
     if pathname == '/apps/db_connection':
         if get_user_db_connection():
             # Already connected message

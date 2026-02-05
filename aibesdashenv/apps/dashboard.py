@@ -10,6 +10,8 @@ import json
 import os
 from apps.reports import initialize_report_generator, get_report_generator
 import dash
+
+
 # Conditional ML import
 try:
     from sklearn.linear_model import LinearRegression

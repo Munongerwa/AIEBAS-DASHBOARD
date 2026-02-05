@@ -299,12 +299,12 @@ ORDER BY stands_value DESC
     def send_report_via_email(self, filepath, recipient_emails, subject=None, message=None):
         """Send report via email"""
         try:
-            # Get email settings
+            # Getting email settings
             email_settings = self.get_email_settings()
             if not email_settings:
                 return False, "Email settings not configured. Please configure email settings in the Settings page."
             
-            # Check required fields
+            # Checking required fields
             if not email_settings.get('username') or not email_settings.get('password'):
                 return False, "Email username and password not configured."
             
@@ -321,13 +321,13 @@ ORDER BY stands_value DESC
             if not message:
                 message = "<p>Please find the attached sales report.</p>"
             
-            # Create message
+            #message creation
             msg = MIMEMultipart()
             msg['From'] = f"{email_settings['sender_name']} <{email_settings['sender_email']}>"
             msg['To'] = ", ".join(recipient_emails) if isinstance(recipient_emails, list) else recipient_emails
             msg['Subject'] = subject
             
-            # Add HTML body
+            # Adding html body
             html_body = f"""
             <html>
                 <body>
@@ -340,7 +340,7 @@ ORDER BY stands_value DESC
             """
             msg.attach(MIMEText(html_body, 'html'))
             
-            # Add attachment
+            # adiing attachment
             if os.path.exists(filepath):
                 with open(filepath, "rb") as attachment:
                     part = MIMEBase('application', 'octet-stream')
@@ -355,7 +355,7 @@ ORDER BY stands_value DESC
             else:
                 return False, f"Report file not found: {filepath}"
             
-            # Send email
+            # Sending  email
             try:
                 context = ssl.create_default_context()
                 with smtplib.SMTP(email_settings['smtp_server'], email_settings['smtp_port']) as server:
@@ -380,7 +380,7 @@ ORDER BY stands_value DESC
     def delete_report(self, filename):
         """Delete a report file and its database record"""
         try:
-            # Validate filename parameter
+            # Validation of the filename parameter
             if not filename:
                 return False, "No filename provided"
             
@@ -395,10 +395,10 @@ ORDER BY stands_value DESC
                 except Exception as e:
                     return False, f"Failed to delete report file: {str(e)}"
             else:
-                # File doesn't exist, but we'll still remove the database record
+                # File doesn't exist but will still remove the record
                 file_deleted = True
             
-            # Delete the database record
+            # Deleting report from database
             db_path = os.path.join(self.reports_dir, "reports.db")
             record_deleted = False
             
@@ -415,11 +415,11 @@ ORDER BY stands_value DESC
                         record_deleted = True
                     else:
                         # No record found to delete
-                        record_deleted = True  # Still consider successful if no record exists
+                        record_deleted = True  
                 except Exception as e:
                     return False, f"Failed to delete database record: {str(e)}"
             else:
-                # Database doesn't exist, but that's okay
+                # Database doesn't exist
                 record_deleted = True
             
             if file_deleted and record_deleted:
@@ -458,7 +458,7 @@ ORDER BY stands_value DESC
                 fontSize=24,
                 spaceAfter=30,
                 alignment=1, 
-                textColor=colors.HexColor("#052191")
+                textColor=colors.HexColor("#0F1013")
             )
             
             subtitle_style = ParagraphStyle(
@@ -476,7 +476,7 @@ ORDER BY stands_value DESC
                     story.append(logo_img)
                     story.append(Spacer(1, 10))
                 except:
-                    pass  # Skip if logo can't be loaded
+                    pass  
             
             story.append(Paragraph(company_info['company_name'], title_style))
             story.append(Paragraph("Sales Report", styles['Heading2']))

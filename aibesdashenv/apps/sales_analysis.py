@@ -163,7 +163,7 @@ layout = html.Div([
             ], width=6, md=3)
         ], className="mb-4"),
         
-        # Charts Row 1
+        # Charts first row
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -190,7 +190,7 @@ layout = html.Div([
             ], width=12, md=6)
         ]),
         
-        # Charts Row 2
+        # Charts second row
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -327,7 +327,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         return [not_connected_alert, "$0.00", "0 stands", "$0.00", "N/A", empty_fig, empty_fig, empty_fig]
     
     try:
-        # Build WHERE clause based on time filter
+        # creating WHERE clause based on time filter
         if active_time_filter == "daily":
             # For daily, use the selected day
             date_condition = f"DATE(ca.registration_date) = '{selected_year}-{selected_month:02d}-{selected_day:02d}'"
@@ -358,7 +358,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         average_sale_value = total_sales / total_stands if total_stands > 0 else 0
         formatted_average_sale = f"${average_sale_value:,.2f}" if average_sale_value else "$0.00"
         
-        # TOP AGENT - Using customer_accounts table (excluding null agent names)
+        # TOP AGENT
         top_agent_query = f"""
         SELECT 
             ca.agent_name,
@@ -373,7 +373,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         top_agent_df = pd.read_sql(top_agent_query, engine)
         top_agent_name = top_agent_df.iloc[0]['agent_name'] if not top_agent_df.empty and top_agent_df.iloc[0]['agent_name'] else "N/A"
         
-        # PROJECT SALES COMPARISON CHART - Using customer_accounts table
+        # PROJECT SALES COMPARISON CHART 
         project_sales_query = f"""
         SELECT 
             p.name AS project_name,
@@ -388,7 +388,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         project_df = pd.read_sql(project_sales_query, engine)
         
         if not project_df.empty:
-            # Create grouped bar chart for project comparison
+            #grouped bar chart for project comparison
             project_fig = go.Figure()
             
             project_fig.add_trace(go.Bar(
@@ -430,7 +430,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
             project_fig = go.Figure()
             project_fig.update_layout(title="No Project Data Available")
         
-        # AGENT SALES CHART - Using customer_accounts table (excluding null agent names)
+        # AGENT SALES CHART 
         agent_sales_query = f"""
         SELECT 
             ca.agent_name,
@@ -463,7 +463,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
             agent_fig = go.Figure()
             agent_fig.update_layout(title="No Agent Data Available")
         
-        # SALES TREND CHART - Using customer_accounts table
+        # SALES TREND CHART 
         if active_time_filter == "daily":
             trend_group_by = "DATE(ca.registration_date)"
             trend_label = "Date"
