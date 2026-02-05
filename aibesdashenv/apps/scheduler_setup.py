@@ -16,7 +16,7 @@ def generate_weekly_report_job():
         previous_year = current_year
         if previous_week < 1:
             previous_year -= 1
-            previous_week = 52  # Approximation
+            previous_week = 52  
             
         generator = get_report_generator()
         if generator:

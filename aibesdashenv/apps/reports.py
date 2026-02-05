@@ -1,4 +1,3 @@
-# apps/reports.py
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -49,17 +48,17 @@ class ReportGenerator:
                 
                 if result:
                     return {
-                        'company_name': result[0] or 'AIBES Real Estate',
+                        'company_name': result[0] or 'AIBES DATA ANALYSIS',
                         'logo_path': result[1]
                     }
             return {
-                'company_name': 'AIBES Real Estate',
+                'company_name': 'AIBES DATA ANALYSIS',
                 'logo_path': None
             }
         except Exception as e:
             print(f"Error getting company info: {e}")
             return {
-                'company_name': 'AIBES Real Estate',
+                'company_name': 'AIBES DATA ANALYSIS',
                 'logo_path': None
             }
     
@@ -92,7 +91,7 @@ class ReportGenerator:
             return None
     
     def get_custom_data(self, start_date, end_date, report_type="custom"):
-        """Fetch data for custom date range"""
+        """Fetch data for custom date range with project names instead of IDs"""
         if not self.db_connection_string:
             return {}
             
@@ -106,17 +105,19 @@ class ReportGenerator:
             date_condition = f"DATE(registration_date) BETWEEN '{start_date_str}' AND '{end_date_str}'"
             transaction_date_condition = f"DATE(transaction_date) BETWEEN '{start_date_str}' AND '{end_date_str}'"
             
-            # Get project-based data using project_id only
+            # Get project-based data using project_id joined with Projects table to get project names
             project_data_query = f"""
-            SELECT 
-                project_id,
-                COUNT(stand_number) AS stands_sold,
-                SUM(sale_value) AS stands_value,
-                COUNT(CASE WHEN available = 0 THEN stand_number END) AS stands_available
-            FROM Stands
-            WHERE {date_condition}
-            GROUP BY project_id
-            ORDER BY stands_sold DESC
+SELECT 
+    p.name AS project_name,
+    p.id AS project_id,
+    COUNT(s.stand_number) AS stands_sold,
+    SUM(s.sale_value) AS stands_value,
+    COUNT(CASE WHEN s.available = 1 THEN 1 END) AS stands_available
+FROM Projects p
+INNER JOIN Stands s ON p.id = s.project_id
+WHERE {date_condition}
+GROUP BY p.id, p.name
+ORDER BY stands_value DESC
             """
             project_df = pd.read_sql(project_data_query, engine)
             
@@ -131,7 +132,7 @@ class ReportGenerator:
             """
             summary_df = pd.read_sql(summary_query, engine)
             
-            # Total Deposit
+            #Total deposit
             total_deposit_query = f"""
             SELECT SUM(deposit_amount) AS total_deposit
             FROM customer_accounts
@@ -140,11 +141,11 @@ class ReportGenerator:
             deposit_df = pd.read_sql(total_deposit_query, engine)
             total_deposit = deposit_df.iloc[0]['total_deposit'] if not deposit_df.empty and not pd.isna(deposit_df.iloc[0]['total_deposit']) else 0
             
-            # Total Installment
+            # Total installment
             total_installment_query = f"""
             SELECT SUM(amount) AS total_installment
             FROM customer_account_invoices
-            WHERE {transaction_date_condition} AND description = 'Instalment'
+            WHERE {transaction_date_condition} AND description = 'Instalment' AND deleted = 0
             """
             installment_df = pd.read_sql(total_installment_query, engine)
             total_installment = installment_df.iloc[0]['total_installment'] if not installment_df.empty and not pd.isna(installment_df.iloc[0]['total_installment']) else 0
@@ -158,6 +159,7 @@ class ReportGenerator:
             WHERE {date_condition}
             GROUP BY DATE(registration_date)
             ORDER BY sale_date
+            LIMIT 31
             """
             daily_trend_df = pd.read_sql(daily_trend_query, engine)
             
@@ -195,7 +197,7 @@ class ReportGenerator:
             daily_trend_df['date_label'] = daily_trend_df['sale_date'].dt.strftime('%m/%d')
             
             ax.bar(daily_trend_df['date_label'], daily_trend_df['stands_sold'], 
-                   color='#007bff', alpha=0.7, edgecolor='#0056b3')
+                   color="#850b5c", alpha=0.7, edgecolor="#0a7981")
             
             ax.set_title(title, fontsize=14, pad=20)
             ax.set_xlabel('Date', fontsize=12)
@@ -222,30 +224,76 @@ class ReportGenerator:
             print(f"Error creating daily trend chart: {e}")
             return None
     
-    def generate_shareable_link(self, filename):
-        """Generate a shareable link for the report"""
+    def create_project_comparison_chart(self, project_df, title="Project Comparison"):
+        """Create a comparison chart showing stands sold vs sales value for each project"""
         try:
-            encoded_filename = quote(filename)
-            return f"http://yourdomain.com/generated_reports/{encoded_filename}"
-        except Exception as e:
-            print(f"Error generating shareable link: {e}")
-            return None
-    
-    def generate_qr_code(self, url):
-        """Generate QR code for sharing"""
-        try:
-            qr = qrcode.QRCode(version=1, box_size=10, border=5)
-            qr.add_data(url)
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
+            if project_df.empty:
+                return None
+            
+            # Create comparison chart
+            fig, ax1 = plt.subplots(figsize=(12, 6))
+            
+            # Create project labels
+            project_labels = project_df['project_name'].tolist()
+            
+            # Plot stands sold (bar chart)
+            bars = ax1.bar(range(len(project_labels)), project_df['stands_sold'], 
+                          color="#850b5c", alpha=0.7, label='Stands Sold', width=0.6)
+            ax1.set_xlabel('Projects', fontsize=12)
+            ax1.set_ylabel('Stands Sold', color="#850b5c", fontsize=12)
+            ax1.tick_params(axis='y', labelcolor="#850b5c")
+            
+            # Add value labels on bars
+            for i, (bar, value) in enumerate(zip(bars, project_df['stands_sold'])):
+                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, 
+                        str(int(value)), ha='center', va='bottom', fontweight='bold', 
+                        color="#850b5c")
+            
+            # Create second y-axis for sales value (line plot)
+            ax2 = ax1.twinx()
+            line = ax2.plot(range(len(project_labels)), project_df['stands_value'], 
+                           color="#0a7981", marker='o', linewidth=3, markersize=8, 
+                           label='Sales Value ($)')
+            ax2.set_ylabel('Sales Value ($)', color="#0a7981", fontsize=12)
+            ax2.tick_params(axis='y', labelcolor="#0a7981")
+            
+            # Format sales values on line points
+            for i, (x, y) in enumerate(zip(range(len(project_labels)), project_df['stands_value'])):
+                ax2.text(x, y + (y * 0.05), f'${y:,.0f}', ha='center', va='bottom', 
+                        fontweight='bold', color="#0a7981")
+            
+            # Set x-axis labels
+            ax1.set_xticks(range(len(project_labels)))
+            ax1.set_xticklabels(project_labels, rotation=45, ha='right')
+            
+            # Title and legend
+            plt.title(title, fontsize=14, pad=20)
+            ax1.grid(True, alpha=0.3, axis='y')
+            
+            # Improve styling
+            ax1.spines['top'].set_visible(False)
+            ax2.spines['top'].set_visible(False)
+            ax1.set_ylim(0, project_df['stands_sold'].max() * 1.3)
+            ax2.set_ylim(0, project_df['stands_value'].max() * 1.3)
+            
+            # Add legend
+            bars_legend = plt.Rectangle((0,0),1,1, fc="#850b5c", alpha=0.7)
+            line_legend = plt.Line2D([0], [0], color="#0a7981", linewidth=3, marker='o')
+            ax1.legend([bars_legend, line_legend], ['Stands Sold', 'Sales Value ($)'], 
+                      loc='upper left')
+            
+            # Adjust layout
+            plt.tight_layout()
             
             # Save to bytes
             img_buffer = io.BytesIO()
-            img.save(img_buffer, format='PNG')
+            plt.savefig(img_buffer, format='png', bbox_inches='tight', dpi=300, facecolor='white')
             img_buffer.seek(0)
+            plt.close(fig)
+            
             return img_buffer
         except Exception as e:
-            print(f"Error generating QR code: {e}")
+            print(f"Error creating project comparison chart: {e}")
             return None
     
     def send_report_via_email(self, filepath, recipient_emails, subject=None, message=None):
@@ -328,6 +376,60 @@ class ReportGenerator:
         except Exception as e:
             print(f"Error sending email: {e}")
             return False, f"Failed to send email: {str(e)}"
+    
+    def delete_report(self, filename):
+        """Delete a report file and its database record"""
+        try:
+            # Validate filename parameter
+            if not filename:
+                return False, "No filename provided"
+            
+            # Delete the report file
+            filepath = os.path.join(self.reports_dir, filename)
+            file_deleted = False
+            
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    file_deleted = True
+                except Exception as e:
+                    return False, f"Failed to delete report file: {str(e)}"
+            else:
+                # File doesn't exist, but we'll still remove the database record
+                file_deleted = True
+            
+            # Delete the database record
+            db_path = os.path.join(self.reports_dir, "reports.db")
+            record_deleted = False
+            
+            if os.path.exists(db_path):
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM reports WHERE filename = ?", (filename,))
+                    rows_affected = cursor.rowcount
+                    conn.commit()
+                    conn.close()
+                    
+                    if rows_affected > 0:
+                        record_deleted = True
+                    else:
+                        # No record found to delete
+                        record_deleted = True  # Still consider successful if no record exists
+                except Exception as e:
+                    return False, f"Failed to delete database record: {str(e)}"
+            else:
+                # Database doesn't exist, but that's okay
+                record_deleted = True
+            
+            if file_deleted and record_deleted:
+                return True, "Report deleted successfully"
+            else:
+                return False, "Failed to delete report"
+                
+        except Exception as e:
+            print(f"Error deleting report: {e}")
+            return False, f"Failed to delete report: {str(e)}"
     
     def generate_pdf_report(self, start_date, end_date, report_type="custom"):
         """Generate PDF report for custom date range with company branding"""
@@ -418,14 +520,14 @@ class ReportGenerator:
             
             # Project-wise Analysis table
             if not data['project_data'].empty:
-                story.append(Paragraph("Project-wise Analysis", subtitle_style))
+                story.append(Paragraph("Project Based Analysis", subtitle_style))
                 
-                # Prepare project table data
-                project_table_data = [['Project ID', 'Stands Sold', 'Value ($)', 'Stands Available']]
+                # Prepare project table data - now using project_name instead of project_id
+                project_table_data = [['Project Name', 'Stands Sold', 'Value ($)', 'Stands Available']]
                 
                 for _, row in data['project_data'].iterrows():
                     project_table_data.append([
-                        str(int(row['project_id'])) if pd.notna(row['project_id']) else 'N/A',
+                        str(row['project_name']) if pd.notna(row['project_name']) else 'Unknown Project',
                         str(int(row['stands_sold'])) if pd.notna(row['stands_sold']) else '0',
                         f"${row['stands_value']:,.2f}" if pd.notna(row['stands_value']) else '$0.00',
                         str(int(row['stands_available'])) if pd.notna(row['stands_available']) else '0'
@@ -444,7 +546,7 @@ class ReportGenerator:
                         str(int(total_available))
                     ])
                 
-                project_table = Table(project_table_data, colWidths=[1.5*inch, 1.5*inch, 2*inch, 2*inch])
+                project_table = Table(project_table_data, colWidths=[2*inch, 1.5*inch, 2*inch, 1.5*inch])
                 
                 # Define base table styles
                 project_table_styles = [
@@ -481,23 +583,19 @@ class ReportGenerator:
                 # chart image
                 img_buffer = io.BytesIO(chart_img.getvalue())
                 story.append(Image(img_buffer, width=7*inch, height=3.5*inch))
-                story.append(PageBreak())
+                story.append(Spacer(1, 30))
             
-            # Sharing section
-            story.append(Paragraph("Share This Report", subtitle_style))
-            
-            # Generate shareable link
-            shareable_link = self.generate_shareable_link(filename)
-            if shareable_link:
-                story.append(Paragraph(f"<b>Direct Link:</b> <link href='{shareable_link}'>{shareable_link}</link>", styles['Normal']))
-                story.append(Spacer(1, 20))
+            # Project comparison chart - NEW CHART ADDED
+            project_comparison_img = self.create_project_comparison_chart(data['project_data'], 
+                                                                        f"Project Comparison - Stands Sold vs Sales Value ({report_type.title()})")
+            if project_comparison_img:
+                story.append(Paragraph("Project Comparison Analysis", subtitle_style))
+                story.append(Spacer(1, 12))
                 
-                # Generate QR code
-                qr_code_img = self.generate_qr_code(shareable_link)
-                if qr_code_img:
-                    story.append(Paragraph("Scan to Access Report:", styles['Normal']))
-                    qr_buffer = io.BytesIO(qr_code_img.getvalue())
-                    story.append(Image(qr_buffer, width=2*inch, height=2*inch))
+                # chart image
+                img_buffer2 = io.BytesIO(project_comparison_img.getvalue())
+                story.append(Image(img_buffer2, width=7*inch, height=4*inch))
+                story.append(PageBreak())
             
             # Build PDF
             doc.build(story)

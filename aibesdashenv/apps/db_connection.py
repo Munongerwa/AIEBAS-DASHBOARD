@@ -6,11 +6,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from flask import session
 
 
-# Layout for database connection page
+
 layout = html.Div([
     dcc.Location(id="db-connection-url", refresh=True),  
     
-    # Background image div
+    #background image 
     html.Div(
         style={
             'position': 'fixed',
@@ -128,7 +128,7 @@ layout = html.Div([
     ], fluid=True, className="py-5"),
 ])
 
-# Callback to handle database connection with redirect
+# Callback to handle database connection (redirect)
 @callback(
     [Output("connection-status", "children"),
      Output("db-connection-url", "pathname")],

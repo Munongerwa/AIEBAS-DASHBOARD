@@ -161,11 +161,19 @@ def load_project_options(selected_year):
         return []
     
     try:
-        query = "SELECT DISTINCT project_id FROM Stands ORDER BY project_id"
+        # Get projects with their names
+        query = f"""
+        SELECT DISTINCT p.id AS project_id, p.name AS project_name
+        FROM Projects p
+        INNER JOIN Stands s ON p.id = s.project_id
+        WHERE YEAR(s.registration_date) = {selected_year}
+        ORDER BY p.id
+        """
         df = pd.read_sql(query, engine)
-        options = [{'label': f"Project {row['project_id']}", 'value': row['project_id']} for _, row in df.iterrows()]
+        options = [{'label': f"{row['project_name']} (ID: {row['project_id']})", 'value': row['project_id']} for _, row in df.iterrows()]
         return options
     except Exception as e:
+        print(f"Error loading project options: {e}")
         return []
     finally:
         if engine:
@@ -200,27 +208,36 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
     
     try:
         # filters query
-        where_clause = f"WHERE YEAR(registration_date) = {selected_year}"
+        where_clause = f"WHERE YEAR(s.registration_date) = {selected_year}"
         if selected_project:
-            where_clause += f" AND project_id = {selected_project}"
+            where_clause += f" AND s.project_id = {selected_project}"
         
         # Total Projects
         total_projects_query = f"""
-        SELECT COUNT(DISTINCT project_id) AS total_projects FROM Stands {where_clause}
+        SELECT COUNT(DISTINCT s.project_id) AS total_projects 
+        FROM Stands s
+        INNER JOIN Projects p ON s.project_id = p.id
+        {where_clause}
         """
         projects_df = pd.read_sql(total_projects_query, engine)
         total_projects = projects_df.iloc[0]['total_projects'] if not projects_df.empty and projects_df.iloc[0]['total_projects'] else 0
         
         # Total Stands
         total_stands_query = f"""
-        SELECT COUNT(stand_number) AS total_stands FROM Stands {where_clause}
+        SELECT COUNT(s.stand_number) AS total_stands 
+        FROM Stands s
+        INNER JOIN Projects p ON s.project_id = p.id
+        {where_clause}
         """
         stands_df = pd.read_sql(total_stands_query, engine)
         total_stands = stands_df.iloc[0]['total_stands'] if not stands_df.empty and stands_df.iloc[0]['total_stands'] else 0
         
         # Average Sale Value
         avg_sale_query = f"""
-        SELECT AVG(sale_value) AS avg_sale FROM Stands {where_clause}
+        SELECT AVG(s.sale_value) AS avg_sale 
+        FROM Stands s
+        INNER JOIN Projects p ON s.project_id = p.id
+        {where_clause}
         """
         avg_df = pd.read_sql(avg_sale_query, engine)
         avg_sale = avg_df.iloc[0]['avg_sale'] if not avg_df.empty and avg_df.iloc[0]['avg_sale'] else 0
@@ -229,9 +246,11 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
         # Completion Rate 
         completion_query = f"""
         SELECT 
-            COUNT(CASE WHEN available = 0 THEN 1 END) AS completed,
+            COUNT(CASE WHEN s.available = 0 THEN 1 END) AS completed,
             COUNT(*) AS total
-        FROM Stands {where_clause}
+        FROM Stands s
+        INNER JOIN Projects p ON s.project_id = p.id
+        {where_clause}
         """
         completion_df = pd.read_sql(completion_query, engine)
         if not completion_df.empty and completion_df.iloc[0]['total'] > 0:
@@ -243,10 +262,12 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
         #Monthly Project Progress 
         progress_query = f"""
         SELECT 
-            MONTH(registration_date) AS month,
-            COUNT(stand_number) AS stands_sold
-        FROM Stands {where_clause}
-        GROUP BY MONTH(registration_date)
+            MONTH(s.registration_date) AS month,
+            COUNT(s.stand_number) AS stands_sold
+        FROM Stands s
+        INNER JOIN Projects p ON s.project_id = p.id
+        {where_clause}
+        GROUP BY MONTH(s.registration_date)
         ORDER BY month
         """
         progress_df = pd.read_sql(progress_query, engine)
@@ -296,28 +317,41 @@ def update_project_analysis(n_clicks, selected_year, selected_project):
         #Top Performing Projects 
         top_projects_query = f"""
         SELECT 
-            project_id,
-            COUNT(stand_number) AS total_stands,
-            SUM(sale_value) AS total_value
-        FROM Stands {where_clause}
-        GROUP BY project_id
+            p.name AS project_name,
+            p.id AS project_id,
+            COUNT(s.stand_number) AS total_stands,
+            SUM(s.sale_value) AS total_value
+        FROM Projects p
+        INNER JOIN Stands s ON p.id = s.project_id
+        {where_clause}
+        GROUP BY p.id, p.name
         ORDER BY total_value DESC
         LIMIT 10
         """
         top_df = pd.read_sql(top_projects_query, engine)
         
         if not top_df.empty:
+            # Create combined labels with project name and ID
+            project_labels = [f"{row['project_name']} (ID: {row['project_id']})" for _, row in top_df.iterrows()]
+            
             bar_fig = go.Figure()
             bar_fig.add_trace(go.Bar(
-                x=[f"Project {row['project_id']}" for _, row in top_df.iterrows()],
+                x=project_labels,
                 y=top_df['total_value'],
-                marker_color='lightgreen'
+                marker_color='lightgreen',
+                text=top_df['total_stands'],
+                textposition='auto',
+                hovertemplate='<b>%{x}</b><br>' +
+                             'Total Value: $%{y:,.2f}<br>' +
+                             'Stands Sold: %{text}<br>' +
+                             '<extra></extra>'
             ))
             bar_fig.update_layout(
                 title='Top Performing Projects by Value',
                 xaxis_title='Project',
                 yaxis_title='Total Value ($)',
-                template='plotly_white'
+                template='plotly_white',
+                xaxis_tickangle=-45
             )
         else:
             bar_fig = go.Figure()

@@ -15,7 +15,7 @@ try:
     from sklearn.linear_model import LinearRegression
     ML_AVAILABLE = True
 except ImportError:
-    ML_AVAILABLE = False
+    ML_AVAILABLE = True
 import numpy as np
 
 # Function to get user-specific database engine
@@ -142,7 +142,7 @@ layout = html.Div([
                                 className="modern-radio-group"
                             )
                         ], className="mb-3")
-                    ], width=12, lg=6),
+                    ], width=12, lg=8),
                     
                     # Year Filter (conditionally shown)
                     dbc.Col([
@@ -162,34 +162,13 @@ layout = html.Div([
                                 className="modern-dropdown"
                             )
                         ], id="year-filter-container", className="mb-3")
-                    ], width=12, lg=3),
-                    
-                    # Action Buttons
-                    dbc.Col([
-                        html.Div([
-                            dbc.Button([
-                                html.I(className="fas fa-sync me-2"),
-                                "Refresh"
-                            ], id="refresh-dashboard-button", color="primary", size="sm", className="me-2 mb-2 modern-btn"),
-                            dbc.Button([
-                                html.I(className="fas fa-download me-2"),
-                                "Download"
-                            ], id="download-report-button", color="success", size="sm", className="me-2 mb-2 modern-btn"),
-                            dbc.Button([
-                                html.I(className="fas fa-file-pdf me-2"),
-                                "PDF Report"
-                            ], id="generate-weekly-report", color="info", size="sm", className="mb-2 modern-btn")
-                        ], className="d-flex flex-wrap justify-content-end")
-                    ], width=12, lg=3)
+                    ], width=12, lg=4)
                 ])
             ])
         ], className="shadow-sm mb-4 modern-filter-card"),
         
         # Manual Report Status
         html.Div(id="manual-report-status", className="mb-3"),
-        
-        # Download Component
-        dcc.Download(id="download-report"),
         
         # Metrics Cards Row
         dbc.Row([
@@ -262,7 +241,7 @@ layout = html.Div([
             ], width=12, md=6, lg=3),
         ], className="mb-4 g-3"),
         
-        # Graphs 
+        # Graphs Row
         dbc.Row([
             # Pie chart 
             dbc.Col([
@@ -280,7 +259,7 @@ layout = html.Div([
             dbc.Col([
                 dbc.Card([
                     dbc.CardHeader([
-                        html.I(className="fas fa-chart-line me-2"),
+                        
                         html.Span(id="chart-title")
                     ], className="fw-bold"),
                     dbc.CardBody([
@@ -288,6 +267,21 @@ layout = html.Div([
                     ])
                 ], className="shadow-sm h-100")
             ], width=12, lg=6, className="mb-4")
+        ], className="g-4"),
+        
+        # Project Performance Bar Chart
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.I(className="fas fa-chart-bar me-2"),
+                        "Project Performance - Stands Sold"
+                    ], className="fw-bold"),
+                    dbc.CardBody([
+                        dcc.Graph(id="project-performance-bar", config={'displayModeBar': True})
+                    ])
+                ], className="shadow-sm h-100")
+            ], width=12, className="mb-4")
         ], className="g-4")
     ], className="mt-4", fluid=True)
 ], className="bg-light min-vh-100 py-4")
@@ -318,7 +312,117 @@ def update_chart_title(time_filter, selected_year):
     }
     return [html.I(className="fas fa-chart-line me-2"), title_map.get(time_filter, "Stands Sales Trend")]
 
-# Main dashboard callback
+# Project Performance Bar Chart Callback
+@callback(
+    Output("project-performance-bar", "figure"),
+    [Input("time-filter-radio", "value"),
+     Input("year-dropdown", "value")],
+    prevent_initial_call=False
+)   
+def update_project_performance_chart(time_filter, selected_year):
+    engine = get_user_db_engine()
+    
+    if not engine:
+        # Return empty figure when not connected
+        empty_fig = go.Figure()
+        empty_fig.update_layout(
+            title="Project Performance - Connect to Database to View Data",
+            height=400,
+            xaxis_title="Project",
+            yaxis_title="Stands Sold",
+            margin=dict(l=40, r=20, t=50, b=40)
+        )
+        return empty_fig
+    
+    try:
+        # WHERE clause based on time filter
+        if time_filter == "daily":
+            date_condition = "DATE(s.registration_date) = CURDATE()"
+        elif time_filter == "weekly":
+            date_condition = "s.registration_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+        else:  # yearly or forecast
+            date_condition = f"YEAR(s.registration_date) = {selected_year}"
+        
+        # Stands sold by project with project names
+        project_query = f"""
+        SELECT 
+            p.name AS project_name,
+            p.id AS project_id,
+            COUNT(s.stand_number) AS stands_sold,
+            SUM(s.sale_value) AS stands_value,
+            COUNT(CASE WHEN s.available = 1 THEN 1 END) AS stands_available
+        FROM Projects p
+        INNER JOIN Stands s ON p.id = s.project_id
+        WHERE {date_condition}
+        GROUP BY p.id, p.name
+        ORDER BY stands_sold DESC
+        LIMIT 20  -- Show top 20 projects
+        """
+        
+        project_df = pd.read_sql(project_query, engine)
+        
+        if project_df.empty:
+            # No data found
+            empty_fig = go.Figure()
+            empty_fig.update_layout(
+                title=f"Project Performance - No Data for Selected Period",
+                height=400,
+                xaxis_title="Project",
+                yaxis_title="Stands Sold",
+                margin=dict(l=40, r=20, t=50, b=40)
+            )
+            return empty_fig
+        
+        # Create combined labels for better readability
+        project_df['project_label'] = project_df['project_name']
+        
+        # Bar chart
+        fig = go.Figure(data=[
+            go.Bar(
+                x=project_df['project_label'],
+                y=project_df['stands_sold'],
+                marker_color="#079b38",
+                text=project_df['stands_sold'],
+                textposition='auto',
+                hovertemplate='<b>%{x}</b><br>' +
+                             'Stands Sold: %{y}<br>' +
+                             'Stands Value: $%{customdata[0]:,.2f}<br>' +
+                             'Stands Available: %{customdata[1]}<br>' +
+                             '<extra></extra>',
+                customdata=project_df[['stands_value', 'stands_available']].values
+            )
+        ])
+        
+        # Layout
+        fig.update_layout(
+            title=f"Project Performance - Stands Sold ({time_filter.title()})",
+            xaxis_title="Project",
+            yaxis_title="Stands Sold",
+            height=400,
+            margin=dict(l=40, r=20, t=50, b=80),  # Increased bottom margin for rotated labels
+            hovermode='closest'
+        )
+        
+        # Rotate x-axis labels for better readability
+        fig.update_xaxes(tickangle=45, tickfont=dict(size=10))
+        
+        # Grid
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        
+        return fig
+        
+    except Exception as e:
+        print(f"Error generating project performance chart: {e}")
+        error_fig = go.Figure()
+        error_fig.update_layout(
+            title="Error Loading Project Performance Data",
+            height=400,
+            margin=dict(l=40, r=20, t=50, b=40)
+        )
+        return error_fig
+
+# Main dashboard callback 
 @callback(
     [Output("dashboard-connection-status", "children"),
      Output("total-stand-value", "children"),
@@ -336,12 +440,11 @@ def update_chart_title(time_filter, selected_year):
      Output("deposit-yoy", "children"),
      Output("installment-yoy", "children"),
      Output("report-data-store", "children")],  # Stored as JSON string
-    [Input("refresh-dashboard-button", "n_clicks"),
-     Input("time-filter-radio", "value"),
+    [Input("time-filter-radio", "value"),
      Input("year-dropdown", "value")],
     prevent_initial_call=False
 )
-def update_dashboard_metrics(n_clicks, time_filter, selected_year):
+def update_dashboard_metrics(time_filter, selected_year):
     engine = get_user_db_engine()
     
     # Period mapping
@@ -382,7 +485,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 default_yoy, default_yoy, default_yoy, default_yoy, "{}"]
     
     try:
-        # Build WHERE clause based on time filter
+        #WHERE clause based on time filter
         if time_filter == "daily":
             date_condition = "DATE(registration_date) = CURDATE()"
             transaction_date_condition = "DATE(transaction_date) = CURDATE()"
@@ -426,7 +529,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             total_deposit_query = f"""
             SELECT SUM(deposit_amount) AS total_deposit
             FROM customer_accounts
-            WHERE {date_condition}
+            WHERE {date_condition} AND deleted = 0
             """
             deposit_df = pd.read_sql(total_deposit_query, engine)
             current_deposit = deposit_df.iloc[0]['total_deposit'] if not deposit_df.empty and not pd.isna(deposit_df.iloc[0]['total_deposit']) else 0
@@ -440,7 +543,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
             total_installment_query = f"""
             SELECT SUM(amount) AS total_installment
             FROM customer_account_invoices
-            WHERE {transaction_date_condition} AND description = 'Instalment'
+            WHERE {transaction_date_condition} AND description = 'Instalment' AND deleted = 0
             """
             installment_df = pd.read_sql(total_installment_query, engine)
             current_installment = installment_df.iloc[0]['total_installment'] if not installment_df.empty and not pd.isna(installment_df.iloc[0]['total_installment']) else 0
@@ -526,7 +629,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 prev_deposit_query = f"""
                 SELECT SUM(deposit_amount) AS total_deposit
                 FROM customer_accounts
-                WHERE YEAR(registration_date) = {previous_year}
+                WHERE YEAR(registration_date) = {previous_year} AND deleted = 0
                 """
                 prev_deposit_df = pd.read_sql(prev_deposit_query, engine)
                 previous_deposit = prev_deposit_df.iloc[0]['total_deposit'] if not prev_deposit_df.empty and not pd.isna(prev_deposit_df.iloc[0]['total_deposit']) else 0
@@ -537,7 +640,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 prev_installment_query = f"""
                 SELECT SUM(amount) AS total_installment
                 FROM customer_account_invoices
-                WHERE YEAR(transaction_date) = {previous_year} AND description = 'Instalment'
+                WHERE YEAR(transaction_date) = {previous_year} AND description = 'Instalment' AND deleted = 0
                 """
                 prev_installment_df = pd.read_sql(prev_installment_query, engine)
                 previous_installment = prev_installment_df.iloc[0]['total_installment'] if not prev_installment_df.empty and not pd.isna(prev_installment_df.iloc[0]['total_installment']) else 0
@@ -627,7 +730,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                         # Forecast data
                         forecast_points_df = forecast_df[forecast_df['type'] == 'forecast']
                         if not forecast_points_df.empty and not actual_df.empty:
-                            # Get last actual point to connect smoothly
+                            #last actual point to connect smoothly
                             last_actual = actual_df.iloc[-1]
                             forecast_x = [last_actual['month']] + forecast_points_df['month'].tolist()
                             forecast_y = [last_actual['total_stands_sold']] + forecast_points_df['total_stands_sold'].tolist()
@@ -713,7 +816,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 )
                 
             elif time_filter == "weekly":
-                # Show daily trend for last 7 days
+                #daily trend for last 7 days
                 trend_query = """
                 SELECT 
                     DATE(registration_date) AS day,
@@ -725,7 +828,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 """
                 trend_df = pd.read_sql(trend_query, engine)
                 
-                # Generate last 7 days
+                #last 7 days
                 end_date = datetime.date.today()
                 start_date = end_date - datetime.timedelta(days=6)
                 date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -756,7 +859,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 )
                 
             else:  # daily
-                # Show hourly trend for today
+                # hourly trend for today
                 trend_query = """
                 SELECT 
                     HOUR(registration_date) AS hour,
@@ -781,7 +884,7 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                     mode='lines+markers',
                     fill='tozeroy',
                     name='Stands Sold',
-                    line=dict(color="#007bff", width=3),
+                    line=dict(color="#001020", width=3),
                     marker=dict(size=6)
                 ))
                 area_fig.update_layout(
@@ -839,98 +942,3 @@ def update_dashboard_metrics(n_clicks, time_filter, selected_year):
                 engine.dispose()
             except:
                 pass
-
-# Callback for downloading report
-@callback(
-    Output("download-report", "data"),
-    Input("download-report-button", "n_clicks"),
-    State("time-filter-radio", "value"),
-    State("year-dropdown", "value"),
-    State("report-data-store", "children"),
-    prevent_initial_call=True
-)
-def download_report(n_clicks, time_filter, selected_year, report_data_json):
-    if n_clicks is None:
-        return no_update
-    
-    try:
-        # Parse the JSON string back to dict
-        if report_data_json and report_data_json != "{}":
-            report_data = json.loads(report_data_json)
-        else:
-            report_data = {}
-        
-        # Generate report content
-        period_label_map = {
-            "daily": "Today",
-            "weekly": "Last 7 Days",
-            "yearly": f"Year: {selected_year}",
-            "forecast": f"Forecast for {selected_year}" if ML_AVAILABLE else f"Year: {selected_year}"
-        }
-        
-        period_text = period_label_map.get(time_filter, "Unknown Period")
-        
-        content = f"""Sales Dashboard Report
-=================
-
-Generated on: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-Period: {period_text}
-
-SUMMARY METRICS
----------------
-Total Stand Value: {report_data.get('total_stand_value', '$0')}
-Stands Sold: {report_data.get('stands_sold', '0')}
-Total Deposit: {report_data.get('total_deposit', '$0')}
-Total Installment: {report_data.get('total_installment', '$0')}
-
-Note: This is a simplified text report. For full graphical reports, please use the export to PDF feature in your browser.
-"""
-        
-        return dict(content=content, filename=f"sales_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
-    except Exception as e:
-        print(f"Report generation error: {e}")
-        return no_update
-
-# Callback for generating weekly PDF report
-@callback(
-    Output("manual-report-status", "children"),
-    Input("generate-weekly-report", "n_clicks"),
-    State("year-dropdown", "value"),
-    prevent_initial_call=True
-)
-def generate_weekly_report(n_clicks, selected_year):
-    if n_clicks is None:
-        return no_update
-    
-    try:
-        # Get current week number
-        current_week = datetime.datetime.now().isocalendar()[1]
-        
-        # Initialize report generator if not already done
-        if session.get('db_connection_string'):
-            generator = get_report_generator()
-            if not generator:
-                generator = initialize_report_generator(session['db_connection_string'])
-            
-            # Generate report
-            filepath = generator.generate_pdf_report(selected_year, current_week)
-            if filepath:
-                return dbc.Alert([
-                    html.I(className="fas fa-check-circle me-2"),
-                    f"PDF Report generated successfully!"
-                ], color="success")
-            else:
-                return dbc.Alert([
-                    html.I(className="fas fa-exclamation-triangle me-2"),
-                    "Failed to generate PDF report"
-                ], color="warning")
-        else:
-            return dbc.Alert([
-                html.I(className="fas fa-exclamation-triangle me-2"),
-                "No database connection - cannot generate report"
-            ], color="danger")
-    except Exception as e:
-        return dbc.Alert([
-            html.I(className="fas fa-exclamation-triangle me-2"),
-            f"Error generating PDF report: {str(e)}"
-        ], color="danger")

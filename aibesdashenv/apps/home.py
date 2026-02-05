@@ -37,17 +37,6 @@ layout = html.Div(
                 ),       
             ]
         ),
-        #Footer text
-        html.P(
-            "© 2026 Aibes Analysis. All rights reserved.", 
-            style={
-                'position': 'fixed',
-                'marginTop': '30px',
-                'bottom': '1px',
-                'fontSize': '0.9rem',
-                'textAlign': 'right',
-                'opacity': '0.8'
-            }
-        )
+       
     ]
 )

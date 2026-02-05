@@ -1,4 +1,3 @@
-# apps/settings.py
 import dash
 from dash import html, dcc, Input, Output, State, callback, no_update
 import dash_bootstrap_components as dbc
@@ -20,7 +19,7 @@ layout = html.Div([
                     "System Settings"
                 ], className="mb-4"),
                 
-                # Tabs for different setting sections
+                #setting sections tabs
                 dbc.Tabs([
                     # Company Information Tab
                     dbc.Tab([
@@ -67,7 +66,7 @@ layout = html.Div([
                                     ]),
                                 ]),
                                 
-                                # Logo Preview Section
+                                # Logo preview 
                                 html.Div(id="logo-preview-section"),
                                 
                                 dbc.Button([
@@ -78,7 +77,7 @@ layout = html.Div([
                         ], className="shadow-sm mb-4"),
                     ], label="Company Info", tab_id="company-tab"),
                     
-                    # Email Settings Tab
+                    # Email settings tab
                     dbc.Tab([
                         dbc.Card([
                             dbc.CardBody([
@@ -154,7 +153,7 @@ layout = html.Div([
                                 
                                 html.Hr(),
                                 
-                                # Test email section
+                                # Testing email
                                 html.H5("Test Email Settings", className="mt-4 mb-3"),
                                 dbc.Input(
                                     type="email", 
@@ -172,7 +171,7 @@ layout = html.Div([
                     ], label="Email Settings", tab_id="email-tab"),
                 ], id="settings-tabs", active_tab="company-tab"),
                 
-                # Current Settings Display
+                # Current settings display
                 html.Hr(),
                 html.H5("Current Settings", className="mt-4"),
                 html.Div(id="current-settings-display"),
@@ -195,7 +194,7 @@ class SettingsManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Create company settings table
+        #company settings table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS company_settings (
                 id INTEGER PRIMARY KEY,
@@ -206,7 +205,7 @@ class SettingsManager:
             )
         ''')
         
-        # Create email settings table
+        #email settings table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS email_settings (
                 id INTEGER PRIMARY KEY,
@@ -220,15 +219,15 @@ class SettingsManager:
             )
         ''')
         
-        # Insert default company settings if none exist
+        # use default company settings if none exist
         cursor.execute("SELECT COUNT(*) FROM company_settings")
         if cursor.fetchone()[0] == 0:
             cursor.execute('''
                 INSERT INTO company_settings (id, company_name) 
-                VALUES (1, 'AIBES Real Estate')
+                VALUES (1, 'AIBES Data Analysis')
             ''')
         
-        # Insert default email settings if none exist
+        #default email settings if none exist
         cursor.execute("SELECT COUNT(*) FROM email_settings")
         if cursor.fetchone()[0] == 0:
             cursor.execute('''
@@ -246,7 +245,7 @@ class SettingsManager:
             cursor = conn.cursor()
             
             if logo_path and logo_data:
-                # Save with logo
+                # Save logo
                 cursor.execute('''
                     UPDATE company_settings 
                     SET company_name = ?, logo_path = ?, logo_data = ?, updated_date = CURRENT_TIMESTAMP
@@ -373,12 +372,12 @@ class SettingsManager:
     def save_logo_file(self, logo_data, filename):
         """Save uploaded logo to file system"""
         try:
-            # Create logos directory
+            #logos directory
             logos_dir = os.path.join(os.path.dirname(__file__), "..", "logos")
             if not os.path.exists(logos_dir):
                 os.makedirs(logos_dir)
             
-            # Generate unique filename
+            #unique filename
             file_extension = os.path.splitext(filename)[1]
             unique_filename = f"logo_{uuid.uuid4().hex}{file_extension}"
             file_path = os.path.join(logos_dir, unique_filename)
@@ -434,7 +433,7 @@ def handle_logo_upload(contents, filename):
                     "Invalid image file"
                 ], color="danger"), None
             
-            # Create preview
+            #preview
             preview = html.Div([
                 dbc.Card([
                     dbc.CardHeader("Logo Preview", className="fw-bold"),
@@ -560,7 +559,7 @@ def send_test_email(n_clicks, test_email):
             from .reports import get_report_generator            
             return dbc.Alert([
                 html.I(className="fas fa-check-circle me-2"),
-                f"Test email sent successfully to {test_email}! (This is a simulation in this example)"
+                f"Test email sent successfully to {test_email}! (This is an example)"
             ], color="success")
         except Exception as e:
             return dbc.Alert([
