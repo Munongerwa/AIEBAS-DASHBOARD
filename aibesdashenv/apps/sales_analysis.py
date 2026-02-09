@@ -163,7 +163,7 @@ layout = html.Div([
             ], width=6, md=3)
         ], className="mb-4"),
         
-        # Charts first row
+        # Charts Row 1
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -190,7 +190,7 @@ layout = html.Div([
             ], width=12, md=6)
         ]),
         
-        # Charts second row
+        # Charts Row 2
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -327,14 +327,18 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         return [not_connected_alert, "$0.00", "0 stands", "$0.00", "N/A", empty_fig, empty_fig, empty_fig]
     
     try:
-        # creating WHERE clause based on time filter
+        # Build WHERE clause based on time filter
         if active_time_filter == "daily":
             # For daily, use the selected day
             date_condition = f"DATE(ca.registration_date) = '{selected_year}-{selected_month:02d}-{selected_day:02d}'"
         elif active_time_filter == "weekly":
             if selected_week:
-                # Approximate week calculation
-                date_condition = f"YEAR(ca.registration_date) = {selected_year} AND MONTH(ca.registration_date) = {selected_month} AND WEEK(ca.registration_date, 1) = WEEK(STR_TO_DATE('{selected_year}-{selected_month:02d}-01', '%Y-%m-%d')) + {selected_week - 1}"
+                # Use a simpler approach for weekly filtering
+                start_date = datetime.date(selected_year, selected_month, 1)
+                # Calculate approximate week start and end dates
+                week_start = start_date + datetime.timedelta(weeks=selected_week-1)
+                week_end = week_start + datetime.timedelta(days=6)
+                date_condition = f"DATE(ca.registration_date) BETWEEN '{week_start}' AND '{week_end}'"
             else:
                 date_condition = f"YEAR(ca.registration_date) = {selected_year} AND MONTH(ca.registration_date) = {selected_month}"
         elif active_time_filter == "monthly":
@@ -358,7 +362,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         average_sale_value = total_sales / total_stands if total_stands > 0 else 0
         formatted_average_sale = f"${average_sale_value:,.2f}" if average_sale_value else "$0.00"
         
-        # TOP AGENT
+        # TOP AGENT - Using customer_accounts table (excluding null agent names)
         top_agent_query = f"""
         SELECT 
             ca.agent_name,
@@ -373,7 +377,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         top_agent_df = pd.read_sql(top_agent_query, engine)
         top_agent_name = top_agent_df.iloc[0]['agent_name'] if not top_agent_df.empty and top_agent_df.iloc[0]['agent_name'] else "N/A"
         
-        # PROJECT SALES COMPARISON CHART 
+        # PROJECT SALES COMPARISON CHART - Using customer_accounts table
         project_sales_query = f"""
         SELECT 
             p.name AS project_name,
@@ -388,7 +392,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
         project_df = pd.read_sql(project_sales_query, engine)
         
         if not project_df.empty:
-            #grouped bar chart for project comparison
+            # Create grouped bar chart for project comparison
             project_fig = go.Figure()
             
             project_fig.add_trace(go.Bar(
@@ -430,7 +434,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
             project_fig = go.Figure()
             project_fig.update_layout(title="No Project Data Available")
         
-        # AGENT SALES CHART 
+        # AGENT SALES CHART - Using customer_accounts table (excluding null agent names)
         agent_sales_query = f"""
         SELECT 
             ca.agent_name,
@@ -463,7 +467,7 @@ def update_sales_analysis(n_clicks, active_time_filter, selected_year, selected_
             agent_fig = go.Figure()
             agent_fig.update_layout(title="No Agent Data Available")
         
-        # SALES TREND CHART 
+        # SALES TREND CHART - Using customer_accounts table
         if active_time_filter == "daily":
             trend_group_by = "DATE(ca.registration_date)"
             trend_label = "Date"
