@@ -20,7 +20,7 @@ app = dash.Dash(__name__,
                 server=True)
 
 # Server-side session support
-server = app.server
+
 app.server.secret_key = 'bati-aibes'  
 
 # Serve generated reports 
