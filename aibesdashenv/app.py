@@ -8,7 +8,7 @@ import uuid
 import os
 import sqlite3
 from sqlalchemy import create_engine
-from apps import home, dashboard, db_connection, data_analysis, land_bank_analysis, project_analysis, sales_analysis, reports_view, settings
+from apps import home, dashboard, db_connection, land_bank_analysis, project_analysis, sales_analysis, reports_view, settings
 
 #initializeing the dash app with suppress_callback_exceptions=True
 app = dash.Dash(__name__, 
@@ -20,6 +20,7 @@ app = dash.Dash(__name__,
                 server=True)
 
 # Server-side session support
+server = app.server
 app.server.secret_key = 'bati-aibes'  
 
 # Serve generated reports 
@@ -394,3 +395,4 @@ if __name__ == '__main__':
     
     # run app
     app.run(debug=True)
+            
