@@ -1,4 +1,4 @@
-﻿APScheduler==3.11.2
+APScheduler==3.11.2
 blinker==1.9.0
 certifi==2026.1.4
 charset-normalizer==3.4.4
@@ -14,6 +14,7 @@ dash_mantine_components==2.4.1
 Flask==3.1.2
 fonttools==4.61.1
 greenlet==3.3.0
+gunicorn==25.0.3
 idna==3.11
 importlib_metadata==8.7.1
 itsdangerous==2.2.0
