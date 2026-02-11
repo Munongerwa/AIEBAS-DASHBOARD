@@ -19,6 +19,9 @@ app = dash.Dash(__name__,
                 suppress_callback_exceptions=True,
                 server=True)
 
+# Make the server object available for gunicorn
+server = app.server
+
 # Server-side session support
 app.server.secret_key = 'bati-aibes'  
 
@@ -433,8 +436,12 @@ def get_connection_status_component():
             ], className="text-danger small")
         ], className="d-flex align-items-center")
 
+# Initialize database tables when the app starts
+initialize_database_tables()
+
 if __name__ == '__main__':
-    # Initialize database tables
-    initialize_database_tables()
+    # Get port from environment variable (for Render) or default to 8000
+    port = int(os.environ.get('PORT', 8000))
     
-    app.run(debug=True)
+    # Run the app
+    app.run_server(host='0.0.0.0', port=port, debug=False)
