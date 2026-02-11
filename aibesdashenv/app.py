@@ -10,7 +10,7 @@ import sqlite3
 from sqlalchemy import create_engine
 from apps import home, dashboard, db_connection, land_bank_analysis, project_analysis, sales_analysis, reports_view, settings
 
-#initializeing the dash app with suppress_callback_exceptions=True
+# Initializing the dash app with suppress_callback_exceptions=True
 app = dash.Dash(__name__, 
                 external_stylesheets=[
                     dbc.themes.BOOTSTRAP,
@@ -20,7 +20,6 @@ app = dash.Dash(__name__,
                 server=True)
 
 # Server-side session support
-
 app.server.secret_key = 'bati-aibes'  
 
 # Serve generated reports 
@@ -115,53 +114,96 @@ logout_modal = dbc.Modal([
     ]),
 ], id="logout-modal", centered=True)
 
+# Modernized Navbar with Gradient
+navbar = dbc.Navbar(
+    dbc.Container([
+        # Brand Section
+        html.A(
+            dbc.Row([
+                html.Img(src="/assets/aibes.png", height="40px"),
+                
+            ],
+            align="center",
+            className="g-0"
+            ),
+            href="/",
+            style={"textDecoration": "none"},
+        ),
+
+        # Desktop Navigation
+        dbc.Nav([
+            dbc.NavItem(dbc.NavLink("Home", href="/", active="exact", className="mx-2")),
+            dbc.NavItem(dbc.NavLink("Dashboard", href="/apps/dashboard", active="exact", className="mx-2")),
+            
+            dbc.DropdownMenu([
+                dbc.DropdownMenuItem("Land Bank", href="/apps/land_bank_analysis"),
+                dbc.DropdownMenuItem("Project Analysis", href="/apps/project_analysis"),
+                dbc.DropdownMenuItem("Sales Analysis", href="/apps/sales_analysis"),
+            ], 
+            nav=True, 
+            in_navbar=True, 
+            label="Analysis",
+            className="mx-2"),
+            
+            dbc.NavItem(dbc.NavLink("Reports", href="/apps/reports_view", active="exact", className="mx-2")),
+            dbc.NavItem(dbc.NavLink("Database", href="/apps/db_connection", active="exact", className="mx-2")),
+            dbc.NavItem(dbc.NavLink("Settings", href="/apps/settings", active="exact", className="mx-2")),
+        ], 
+        className="ms-auto d-none d-lg-flex",
+        navbar=True,
+        ),
+
+        # Connection Status and Logout
+        html.Div([
+            html.Div(id="navbar-connection-status", className="d-flex align-items-center me-3"),
+            dbc.Button([
+                "Logout"
+            ], id="logout-btn", color="danger", size="sm", className="btn-sm"),
+        ], className="d-flex align-items-center"),
+        
+        # Mobile Toggler
+        dbc.NavbarToggler(id="navbar-toggler", className="d-lg-none ms-2"),
+    ], fluid=True),
+    color="dark",
+    dark=True,
+    sticky="top",
+    className="shadow-sm"
+)
+
+# Mobile Collapsible Menu
+mobile_collapse = dbc.Collapse([
+    dbc.Nav([
+        dbc.NavItem(dbc.NavLink("Home", href="/", active="exact")),
+        dbc.NavItem(dbc.NavLink("Dashboard", href="/apps/dashboard", active="exact")),
+        dbc.DropdownMenu([
+            dbc.DropdownMenuItem("Land Bank", href="/apps/land_bank_analysis"),
+            dbc.DropdownMenuItem("Project Analysis", href="/apps/project_analysis"),
+            dbc.DropdownMenuItem("Sales Analysis", href="/apps/sales_analysis"),
+        ], nav=True, in_navbar=True, label="Analysis"),
+        dbc.NavItem(dbc.NavLink("Reports", href="/apps/reports_view", active="exact")),
+        dbc.NavItem(dbc.NavLink("Database", href="/apps/db_connection", active="exact")),
+        dbc.NavItem(dbc.NavLink("Settings", href="/apps/settings", active="exact")),
+    ], 
+    vertical=True,
+    pills=True,
+    className="px-3 py-2 bg-dark"
+    ),
+], id="navbar-collapse-mobile", navbar=True)
+
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     # Multi-user session management
     dcc.Store(id='session-id'), 
     # Logout confirmation modal
     logout_modal,
-    # Navbar (top)
-    dbc.Navbar(
-        dbc.Container([
-            html.Img(src="/assets/aibes.png", style={"height": "3rem", 'margin-right': '20px'}),
-            dbc.NavbarToggler(id="navbar-toggler"),
-            dbc.Collapse(
-                dbc.Nav(
-                    [
-                        dbc.NavLink([html.I(className="fas fa-home me-2"), "Home"], href="/", active="exact"),
-                        dbc.NavLink([html.I(className="fa-solid fa-grip me-2"), "Dashboard"], href="/apps/dashboard", active="exact"),
-                        dbc.DropdownMenu([
-                            dbc.DropdownMenuItem("Land Bank", href="/apps/land_bank_analysis"),
-                            dbc.DropdownMenuItem("Project Analysis", href="/apps/project_analysis"),
-                            dbc.DropdownMenuItem("Sales Analysis", href="/apps/sales_analysis"),
-                        ], nav=True, in_navbar=True, label="Analysis Modules", toggle_class_name="dropdown-toggle"),
-                        dbc.NavLink([html.I(className="fas fa-file-pdf me-2"), "Reports"], href="/apps/reports_view", active="exact"),
-                        dbc.NavLink([html.I(className="fas fa-database me-2"), "Database"], href="/apps/db_connection", active="exact", id="db-nav-link"),
-                        dbc.NavLink([html.I(className="fas fa-cogs me-2"), "Settings"], href="/apps/settings", active="exact"),
-                    ],
-                    className="me-auto",
-                    navbar=True,
-                ),
-                id="navbar-collapse",
-                navbar=True,
-            ),
-            # Connection Status and Logout in Navbar
-            html.Div([
-                html.Div(id="navbar-connection-status", className="d-flex align-items-center me-3"),
-                dbc.Button([
-                    html.I(className="fas fa-sign-out-alt me-2"),
-                    "Logout"
-                ], id="logout-btn", color="danger", size="sm", className="btn-sm"),
-            ], className="d-flex align-items-center"),
-        ]),
-        color="dark",
-        dark=True,
-        className="mb-20"
-    ),
+    # Modernized navbar
+    navbar,
+    # Mobile menu
+    mobile_collapse,
     # Page content
-    html.Div(id='page-content', children=[]),
+    html.Div(id='page-content', children=[], className="pt-4"),
 ])
+
 # Session initialization callback
 @app.callback(Output('session-id', 'data'),
               Input('url', 'pathname'))
@@ -171,17 +213,19 @@ def initialize_session(pathname):
         session['user_id'] = str(uuid.uuid4())
         session['db_connection_string'] = None
     return session['user_id']
+
 # Callback for navbar toggle
 @app.callback(
-    Output("navbar-collapse", "is_open"),
+    Output("navbar-collapse-mobile", "is_open"),
     [Input("navbar-toggler", "n_clicks")],
-    [State("navbar-collapse", "is_open")],
+    [State("navbar-collapse-mobile", "is_open")],
     prevent_initial_call=False
 )
 def toggle_navbar_collapse(n_clicks, is_open):
     if n_clicks:
         return not is_open
     return is_open
+
 # Logout modal callbacks
 @app.callback(
     Output("logout-modal", "is_open"),
@@ -393,6 +437,4 @@ if __name__ == '__main__':
     # Initialize database tables
     initialize_database_tables()
     
-    # run app
     app.run(debug=True)
-
